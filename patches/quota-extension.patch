@@ -1,0 +1,457 @@
+diff --git a/backend/cmd/server/wire_gen.go b/backend/cmd/server/wire_gen.go
+index 53cef32..395d25a 100644
+--- a/backend/cmd/server/wire_gen.go
++++ b/backend/cmd/server/wire_gen.go
+@@ -202,7 +202,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
+ 	openAIReferralClient := repository.NewOpenAIReferralClient(privacyClientFactory)
+ 	openAIQuotaService := service.ProvideOpenAIQuotaService(accountRepository, proxyRepository, openAITokenProvider, privacyClientFactory, openAIReferralClient, openAIGatewayService)
+ 	usageCache := service.NewUsageCache()
+-	accountUsageService := service.ProvideAccountUsageService(accountRepository, usageLogRepository, claudeUsageFetcher, geminiQuotaService, antigravityQuotaFetcher, grokQuotaFetcher, grokQuotaService, openAIQuotaService, usageCache, identityCache, tlsFingerprintProfileService, openAIGatewayService)
++	accountUsageService := service.ProvideAccountUsageService(accountRepository, usageLogRepository, claudeUsageFetcher, geminiQuotaService, antigravityQuotaFetcher, grokQuotaFetcher, grokQuotaService, openAIQuotaService, usageCache, identityCache, tlsFingerprintProfileService, openAIGatewayService, httpUpstream, configConfig)
+ 	pluginRepository := repository.NewPluginRepository(db)
+ 	pluginHostInfo := providePluginHostInfo(buildInfo)
+ 	pluginKVStore := repository.NewPluginKVStore(redisClient)
+diff --git a/backend/internal/service/account_test_service.go b/backend/internal/service/account_test_service.go
+index 2100331..dfca08b 100644
+--- a/backend/internal/service/account_test_service.go
++++ b/backend/internal/service/account_test_service.go
+@@ -281,16 +281,20 @@ func NewAccountTestService(
+ }
+ 
+ func (s *AccountTestService) validateUpstreamBaseURL(raw string) (string, error) {
+-	if s.cfg == nil {
++	return validateAccountUpstreamBaseURL(s.cfg, raw)
++}
++
++func validateAccountUpstreamBaseURL(cfg *config.Config, raw string) (string, error) {
++	if cfg == nil {
+ 		return "", errors.New("config is not available")
+ 	}
+-	if !s.cfg.Security.URLAllowlist.Enabled {
+-		return urlvalidator.ValidateURLFormat(raw, s.cfg.Security.URLAllowlist.AllowInsecureHTTP)
++	if !cfg.Security.URLAllowlist.Enabled {
++		return urlvalidator.ValidateURLFormat(raw, cfg.Security.URLAllowlist.AllowInsecureHTTP)
+ 	}
+ 	normalized, err := urlvalidator.ValidateHTTPSURL(raw, urlvalidator.ValidationOptions{
+-		AllowedHosts:     s.cfg.Security.URLAllowlist.UpstreamHosts,
++		AllowedHosts:     cfg.Security.URLAllowlist.UpstreamHosts,
+ 		RequireAllowlist: true,
+-		AllowPrivate:     s.cfg.Security.URLAllowlist.AllowPrivateHosts,
++		AllowPrivate:     cfg.Security.URLAllowlist.AllowPrivateHosts,
+ 	})
+ 	if err != nil {
+ 		return "", err
+diff --git a/backend/internal/service/account_upstream_quota.go b/backend/internal/service/account_upstream_quota.go
+new file mode 100644
+index 0000000..046aeae
+--- /dev/null
++++ b/backend/internal/service/account_upstream_quota.go
+@@ -0,0 +1,193 @@
++package service
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"io"
++	"math"
++	"net/http"
++	"time"
++
++	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
++)
++
++type upstreamQuotaAmount struct {
++	Limit     *float64   `json:"limit"`
++	Used      *float64   `json:"used"`
++	Remaining *float64   `json:"remaining"`
++	Unit      string     `json:"unit"`
++	Window    string     `json:"window"`
++	ResetAt   *time.Time `json:"reset_at"`
++}
++
++type upstreamQuotaResponse struct {
++	Mode         string                `json:"mode"`
++	Unit         string                `json:"unit"`
++	Balance      *float64              `json:"balance"`
++	Remaining    *float64              `json:"remaining"`
++	Quota        *upstreamQuotaAmount  `json:"quota"`
++	RateLimits   []upstreamQuotaAmount `json:"rate_limits"`
++	Subscription *struct {
++		DailyUsed    *float64 `json:"daily_usage_usd"`
++		DailyLimit   *float64 `json:"daily_limit_usd"`
++		WeeklyUsed   *float64 `json:"weekly_usage_usd"`
++		WeeklyLimit  *float64 `json:"weekly_limit_usd"`
++		MonthlyUsed  *float64 `json:"monthly_usage_usd"`
++		MonthlyLimit *float64 `json:"monthly_limit_usd"`
++	} `json:"subscription"`
++}
++
++func parseUpstreamQuota(body []byte, now time.Time) (*UsageInfo, error) {
++	var response upstreamQuotaResponse
++	if err := json.Unmarshal(body, &response); err != nil {
++		return nil, err
++	}
++	if response.Mode != "quota_limited" && response.Mode != "unrestricted" {
++		return nil, errors.New("unknown quota mode")
++	}
++	if response.Unit != "" && response.Unit != "USD" {
++		return nil, errors.New("unknown quota unit")
++	}
++	usage := &UsageInfo{UpdatedAt: &now}
++	progress := func(amount upstreamQuotaAmount) (*UsageProgress, error) {
++		if amount.Unit != "" && amount.Unit != "USD" {
++			return nil, errors.New("unknown quota unit")
++		}
++		if amount.Used != nil && *amount.Used < 0 || amount.Limit != nil && *amount.Limit < 0 {
++			return nil, errors.New("negative quota usage or limit")
++		}
++		if amount.Used == nil || amount.Limit == nil || *amount.Limit == 0 {
++			return nil, nil
++		}
++		result := &UsageProgress{Utilization: *amount.Used / *amount.Limit * 100, ResetsAt: amount.ResetAt}
++		if math.IsInf(result.Utilization, 0) {
++			return nil, errors.New("invalid quota utilization")
++		}
++		if result.ResetsAt != nil {
++			result.RemainingSeconds = max(0, int(result.ResetsAt.Sub(now).Seconds()))
++		}
++		return result, nil
++	}
++	if response.Mode == "quota_limited" {
++		if response.Quota != nil {
++			var err error
++			usage.QuotaTotal, err = progress(*response.Quota)
++			if err != nil {
++				return nil, err
++			}
++		}
++		if response.Remaining != nil && *response.Remaining >= 0 {
++			usage.Balance = response.Remaining
++		}
++		for _, amount := range response.RateLimits {
++			window, err := progress(amount)
++			if err != nil {
++				return nil, err
++			}
++			switch amount.Window {
++			case "5h":
++				usage.FiveHour = window
++			case "1d":
++				usage.OneDay = window
++			case "7d":
++				usage.SevenDay = window
++			}
++		}
++	} else if subscription := response.Subscription; subscription != nil {
++		var err error
++		usage.OneDay, err = progress(upstreamQuotaAmount{Used: subscription.DailyUsed, Limit: subscription.DailyLimit})
++		if err != nil {
++			return nil, err
++		}
++		usage.SevenDay, err = progress(upstreamQuotaAmount{Used: subscription.WeeklyUsed, Limit: subscription.WeeklyLimit})
++		if err != nil {
++			return nil, err
++		}
++		usage.ThirtyDay, err = progress(upstreamQuotaAmount{Used: subscription.MonthlyUsed, Limit: subscription.MonthlyLimit})
++		if err != nil {
++			return nil, err
++		}
++	} else {
++		usage.Balance = response.Balance
++	}
++	return usage, nil
++}
++
++func (s *AccountUsageService) fillUpstreamAPIKeyUsage(ctx context.Context, account *Account, baseURL string, usage *UsageInfo) {
++	if s.upstreamHTTP == nil {
++		return
++	}
++	baseURL, err := validateAccountUpstreamBaseURL(s.upstreamConfig, baseURL)
++	if err != nil {
++		return
++	}
++	apiKey := account.GetCredential("api_key")
++	if apiKey == "" {
++		return
++	}
++	proxyURL := ""
++	if account.ProxyID != nil {
++		if account.Proxy == nil || account.Proxy.ID != *account.ProxyID {
++			return
++		}
++		proxyURL = account.Proxy.URL()
++	}
++	requestCtx, cancel := context.WithTimeout(ctx, upstreamBillingProbeRequestTimeout)
++	defer cancel()
++	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, buildOpenAIEndpointURL(baseURL, "/v1/usage"), nil)
++	if err != nil {
++		return
++	}
++	profile := HTTPUpstreamProfileDefault
++	if account.Platform == PlatformOpenAI {
++		profile = HTTPUpstreamProfileOpenAI
++	}
++	req = req.WithContext(WithHTTPUpstreamRedirectsDisabled(WithHTTPUpstreamProfile(req.Context(), profile)))
++	req.Header.Set("Accept", "application/json")
++	req.Header.Set("Authorization", "Bearer "+apiKey)
++	account.ApplyHeaderOverrides(req.Header)
++	var tlsProfile *tlsfingerprint.Profile
++	if s.tlsFPProfileService != nil {
++		tlsProfile = s.tlsFPProfileService.ResolveTLSProfile(account)
++	}
++	resp, err := s.upstreamHTTP.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, tlsProfile)
++	if resp != nil && resp.Body != nil {
++		defer resp.Body.Close()
++	}
++	if err != nil {
++		return
++	}
++	if resp == nil || resp.Body == nil {
++		return
++	}
++	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
++		return
++	}
++	body, err := io.ReadAll(io.LimitReader(resp.Body, upstreamBillingProbeMaxBodyBytes+1))
++	if err != nil {
++		return
++	}
++	if len(body) > upstreamBillingProbeMaxBodyBytes {
++		return
++	}
++	remote, err := parseUpstreamQuota(body, time.Now())
++	if err != nil {
++		return
++	}
++	if remote.FiveHour != nil {
++		usage.FiveHour = remote.FiveHour
++	}
++	if remote.OneDay != nil {
++		usage.OneDay = remote.OneDay
++	}
++	if remote.SevenDay != nil {
++		usage.SevenDay = remote.SevenDay
++	}
++	if remote.ThirtyDay != nil {
++		usage.ThirtyDay = remote.ThirtyDay
++	}
++	usage.QuotaTotal = remote.QuotaTotal
++	usage.Balance = remote.Balance
++	usage.UpdatedAt = remote.UpdatedAt
++}
+diff --git a/backend/internal/service/account_usage_service.go b/backend/internal/service/account_usage_service.go
+index 746cb32..4570a4d 100644
+--- a/backend/internal/service/account_usage_service.go
++++ b/backend/internal/service/account_usage_service.go
+@@ -9,10 +9,12 @@ import (
+ 	"log/slog"
+ 	"math/rand/v2"
+ 	"net/http"
++	"net/url"
+ 	"strings"
+ 	"sync"
+ 	"time"
+ 
++	"github.com/Wei-Shaw/sub2api/internal/config"
+ 	httppool "github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
+ 	openaipkg "github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+ 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+@@ -213,6 +215,9 @@ type UsageInfo struct {
+ 	GrokLocalUsageMonthly  *WindowStats     `json:"grok_local_usage_monthly,omitempty"`
+ 	// ThirtyDay is the official monthly billing window (used/monthlyLimit %).
+ 	ThirtyDay   *UsageProgress      `json:"thirty_day,omitempty"`
++	OneDay      *UsageProgress      `json:"one_day,omitempty"`
++	QuotaTotal  *UsageProgress      `json:"quota_total,omitempty"`
++	Balance     *float64            `json:"balance,omitempty"`
+ 	GrokBilling *xai.BillingSummary `json:"grok_billing,omitempty"`
+ 
+ 	// Antigravity 账号级信息
+@@ -300,6 +305,8 @@ type AccountUsageService struct {
+ 	openAIQuotaService      *OpenAIQuotaService
+ 	cache                   *UsageCache
+ 	identityCache           IdentityCache
++	upstreamHTTP            HTTPUpstream
++	upstreamConfig          *config.Config
+ 	tlsFPProfileService     *TLSFingerprintProfileService
+ 	agentIdentityTaskMu     sync.Mutex
+ 	agentIdentityWS         agentIdentityWSConnectionInvalidator
+@@ -346,6 +353,33 @@ func batchUsageErrorMessage(err error) string {
+ }
+ 
+ func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *Account, forceProbe bool) (*UsageInfo, error) {
++	if account == nil || !IsUpstreamBillingProbeIdentity(account.Platform, account.Type) || account.GetCredential("base_url") == "" {
++		return s.getNativeUsageForAccount(ctx, account, forceProbe)
++	}
++	var usage *UsageInfo
++	if account.Platform == PlatformGemini || account.Platform == PlatformAntigravity || account.Platform == PlatformGrok {
++		var err error
++		usage, err = s.getNativeUsageForAccount(ctx, account, forceProbe)
++		if err != nil {
++			return usage, err
++		}
++	}
++	if usage == nil {
++		usage = &UsageInfo{}
++	}
++	baseURL := account.GetCredential("base_url")
++	if account.RoutesProtocolByInbound() && account.IsAdaptiveAPIProtocol() {
++		baseURL = account.GetCNProtocolBaseURL(APIProtocolChatCompletions)
++	}
++	parsed, parseErr := url.Parse(baseURL)
++	if parseErr == nil && parsed.Hostname() != "" && upstreamBillingProbeTargetIsOfficialAPI(baseURL) {
++		return usage, nil
++	}
++	s.fillUpstreamAPIKeyUsage(ctx, account, baseURL, usage)
++	return usage, nil
++}
++
++func (s *AccountUsageService) getNativeUsageForAccount(ctx context.Context, account *Account, forceProbe bool) (*UsageInfo, error) {
+ 	if account == nil {
+ 		return nil, fmt.Errorf("account is required")
+ 	}
+diff --git a/backend/internal/service/wire.go b/backend/internal/service/wire.go
+index 688d729..2c3db48 100644
+--- a/backend/internal/service/wire.go
++++ b/backend/internal/service/wire.go
+@@ -234,6 +234,8 @@ func ProvideAccountUsageService(
+ 	identityCache IdentityCache,
+ 	tlsFPProfileService *TLSFingerprintProfileService,
+ 	openAIGatewayService *OpenAIGatewayService,
++	httpUpstream HTTPUpstream,
++	cfg *config.Config,
+ ) *AccountUsageService {
+ 	service := NewAccountUsageService(
+ 		accountRepo,
+@@ -249,6 +251,8 @@ func ProvideAccountUsageService(
+ 		tlsFPProfileService,
+ 	)
+ 	service.agentIdentityWS = openAIGatewayService
++	service.upstreamHTTP = httpUpstream
++	service.upstreamConfig = cfg
+ 	return service
+ }
+ 
+diff --git a/frontend/src/components/account/AccountUsageCell.vue b/frontend/src/components/account/AccountUsageCell.vue
+index a12527b..3b322b7 100644
+--- a/frontend/src/components/account/AccountUsageCell.vue
++++ b/frontend/src/components/account/AccountUsageCell.vue
+@@ -689,9 +689,26 @@
+         color="purple"
+       />
+ 
++      <template v-if="account.type === 'apikey' && usageInfo">
++        <UsageProgressBar
++          v-for="window in upstreamUsageWindows"
++          :key="window.label"
++          :label="window.label"
++          :utilization="window.progress.utilization"
++          :resets-at="window.progress.resets_at"
++          :color="window.color"
++          :title="t('admin.accounts.usageWindow.upstreamQuota')"
++        />
++        <span
++          v-if="usageInfo.balance != null"
++          :class="['text-[10px] font-medium leading-4', platformTextClass(account.platform)]"
++          :title="t('admin.accounts.usageWindow.upstreamQuota')"
++        >USD {{ usageInfo.balance.toFixed(2) }}</span>
++      </template>
++
+       <!-- No data at all -->
+       <div
+-        v-if="!todayStats && !todayStatsLoading && !hasApiKeyQuota && !account.ollama_cloud_usage?.eligible && !account.opencode_go_usage?.eligible"
++        v-if="!todayStats && !todayStatsLoading && !hasApiKeyQuota && !hasUpstreamUsage && !account.ollama_cloud_usage?.eligible && !account.opencode_go_usage?.eligible"
+         class="text-xs text-gray-400"
+       >-</div>
+     </div>
+@@ -708,6 +725,7 @@ import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
+ import { formatCompactNumber } from '@/utils/format'
+ import { isOfficialGeminiBaseUrl } from '@/utils/geminiExplicitCache'
+ import { supportsAccountQuota } from '@/utils/accountQuota'
++import { platformTextClass } from '@/utils/platformColors'
+ import UsageProgressBar from './UsageProgressBar.vue'
+ import AccountQuotaInfo from './AccountQuotaInfo.vue'
+ import ClaudeResetCreditsCell from './ClaudeResetCreditsCell.vue'
+@@ -764,6 +782,16 @@ const loading = ref(false)
+ const activeQueryLoading = ref(false)
+ const error = ref<string | null>(null)
+ const usageInfo = ref<AccountUsageInfo | null>(null)
++const upstreamUsageWindows = computed(() => [
++  { label: '5h', progress: usageInfo.value?.five_hour, color: 'indigo' as const },
++  { label: '1d', progress: usageInfo.value?.one_day, color: 'indigo' as const },
++  { label: '7d', progress: usageInfo.value?.seven_day, color: 'emerald' as const },
++  { label: '30d', progress: usageInfo.value?.thirty_day, color: 'purple' as const },
++  { label: 'total', progress: usageInfo.value?.quota_total, color: 'purple' as const },
++].flatMap(({ progress, ...window }) => progress ? [{ ...window, progress }] : []))
++const hasUpstreamUsage = computed(() => props.account.type === 'apikey' && (
++  upstreamUsageWindows.value.length > 0 || usageInfo.value?.balance != null
++))
+ watch(usageInfo, (usage) => {
+   if (usage) emit('usage-loaded', usage)
+ })
+@@ -804,6 +832,7 @@ const showUsageWindows = computed(() => {
+ })
+ 
+ const shouldFetchUsage = computed(() => {
++  if (props.account.type === 'apikey' && props.account.credentials?.base_url && !isMultiProtocolApiKeyPlatform(props.account.platform)) return true
+   if (props.account.platform === 'anthropic') {
+     return props.account.type === 'oauth' || props.account.type === 'setup-token'
+   }
+diff --git a/frontend/src/i18n/locales/en/admin/accounts.ts b/frontend/src/i18n/locales/en/admin/accounts.ts
+index e1fa589..c5b3382 100644
+--- a/frontend/src/i18n/locales/en/admin/accounts.ts
++++ b/frontend/src/i18n/locales/en/admin/accounts.ts
+@@ -1649,6 +1649,7 @@ export default {
+         noData: 'No usage data available for this account'
+       },
+       usageWindow: {
++        upstreamQuota: 'Upstream quota',
+         statsTitle: '5-Hour Window Usage Statistics',
+         statsTitleDaily: 'Daily Usage Statistics',
+         geminiProDaily: 'Pro',
+diff --git a/frontend/src/i18n/locales/zh/admin/accounts.ts b/frontend/src/i18n/locales/zh/admin/accounts.ts
+index 1092445..5f9a195 100644
+--- a/frontend/src/i18n/locales/zh/admin/accounts.ts
++++ b/frontend/src/i18n/locales/zh/admin/accounts.ts
+@@ -512,6 +512,7 @@ export default {
+         }
+       },
+       usageWindow: {
++        upstreamQuota: '上游额度',
+         statsTitle: '5小时窗口用量统计',
+         statsTitleDaily: '每日用量统计',
+         geminiProDaily: 'Pro',
+diff --git a/frontend/src/types/index.ts b/frontend/src/types/index.ts
+index 1eac972..4f5939c 100644
+--- a/frontend/src/types/index.ts
++++ b/frontend/src/types/index.ts
+@@ -1460,6 +1460,9 @@ export interface AccountUsageInfo {
+   seven_day_sonnet: UsageProgress | null
+   seven_day_fable?: UsageProgress | null
+   thirty_day?: UsageProgress | null
++  one_day?: UsageProgress | null
++  quota_total?: UsageProgress | null
++  balance?: number | null
+   gemini_shared_daily?: UsageProgress | null
+   gemini_pro_daily?: UsageProgress | null
+   gemini_flash_daily?: UsageProgress | null
+diff --git a/frontend/src/views/admin/AccountsView.vue b/frontend/src/views/admin/AccountsView.vue
+index 6d71337..8d18dd3 100644
+--- a/frontend/src/views/admin/AccountsView.vue
++++ b/frontend/src/views/admin/AccountsView.vue
+@@ -521,6 +521,7 @@ import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.
+ import type { SelectOption } from '@/components/common/Select.vue'
+ import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
+ import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
++import { isMultiProtocolApiKeyPlatform } from '@/components/account/credentialsBuilder'
+ import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
+ import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
+ import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
+@@ -763,6 +764,7 @@ const buildDefaultTodayStats = (): WindowStats => ({
+ })
+ 
+ const accountSupportsBatchUsage = (account: Account) => {
++  if (account.type === 'apikey' && account.credentials?.base_url && !isMultiProtocolApiKeyPlatform(account.platform)) return true
+   if (account.platform === 'anthropic') {
+     return account.type === 'oauth' || account.type === 'setup-token'
+   }
