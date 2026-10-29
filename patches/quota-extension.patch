@@ -11,6 +11,602 @@ index 53cef32..395d25a 100644
  	pluginRepository := repository.NewPluginRepository(db)
  	pluginHostInfo := providePluginHostInfo(buildInfo)
  	pluginKVStore := repository.NewPluginKVStore(redisClient)
+diff --git a/backend/go.mod b/backend/go.mod
+index c853d27..7c1a249 100644
+--- a/backend/go.mod
++++ b/backend/go.mod
+@@ -18,6 +18,7 @@ require (
+ 	github.com/cespare/xxhash/v2 v2.3.0
+ 	github.com/coder/websocket v1.8.14
+ 	github.com/dgraph-io/ristretto v0.2.0
++	github.com/dop251/goja v0.0.0-20261024144015-2a9269b6b6de
+ 	github.com/gin-gonic/gin v1.9.1
+ 	github.com/go-playground/validator/v10 v10.14.0
+ 	github.com/go-webauthn/webauthn v0.17.4
+@@ -103,7 +104,7 @@ require (
+ 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
+ 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+ 	github.com/distribution/reference v0.6.0 // indirect
+-	github.com/dlclark/regexp2/v2 v2.1.0 // indirect
++	github.com/dlclark/regexp2/v2 v2.8.1 // indirect
+ 	github.com/docker/docker v28.5.1+incompatible // indirect
+ 	github.com/docker/go-connections v0.6.0 // indirect
+ 	github.com/docker/go-units v0.5.0 // indirect
+@@ -121,6 +122,7 @@ require (
+ 	github.com/go-openapi/inflect v0.19.0 // indirect
+ 	github.com/go-playground/locales v0.14.1 // indirect
+ 	github.com/go-playground/universal-translator v0.18.1 // indirect
++	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
+ 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
+ 	github.com/go-webauthn/x v0.2.6 // indirect
+ 	github.com/goccy/go-json v0.10.2 // indirect
+@@ -128,6 +130,7 @@ require (
+ 	github.com/google/go-cmp v0.7.0 // indirect
+ 	github.com/google/go-querystring v1.1.0 // indirect
+ 	github.com/google/go-tpm v0.9.8 // indirect
++	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
+ 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.3 // indirect
+ 	github.com/hashicorp/hcl v1.0.0 // indirect
+ 	github.com/hashicorp/hcl/v2 v2.18.1 // indirect
+diff --git a/backend/go.sum b/backend/go.sum
+index ff16ab7..dbb4696 100644
+--- a/backend/go.sum
++++ b/backend/go.sum
+@@ -163,12 +163,16 @@ github.com/distribution/reference v0.6.0 h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5Qvfr
+ github.com/distribution/reference v0.6.0/go.mod h1:BbU0aIcezP1/5jX/8MP0YiH4SdvB5Y4f/wlDRiLyi3E=
+ github.com/dlclark/regexp2/v2 v2.1.0 h1:jHXRmHRZGbuQzDZjMlCAXOvQb75iv3HyLDzXGj5H1AY=
+ github.com/dlclark/regexp2/v2 v2.1.0/go.mod h1:Bz5TMy5d8fPK0ximH0Yi9KvsRHNnvXqUx9XG6a4wB+I=
++github.com/dlclark/regexp2/v2 v2.8.1 h1:I1jbaCbXeOxdVN8z3fb55Mvtgb94/6+Dh0zjmXjKV/0=
++github.com/dlclark/regexp2/v2 v2.8.1/go.mod h1:avUrQvPaLz2DrFNHJF0taWAFFX2C1GMSSoeiqFjcBmU=
+ github.com/docker/docker v28.5.1+incompatible h1:Bm8DchhSD2J6PsFzxC35TZo4TLGR2PdW/E69rU45NhM=
+ github.com/docker/docker v28.5.1+incompatible/go.mod h1:eEKB0N0r5NX/I1kEveEz05bcu8tLC/8azJZsviup8Sk=
+ github.com/docker/go-connections v0.6.0 h1:LlMG9azAe1TqfR7sO+NJttz1gy6KO7VJBh+pMmjSD94=
+ github.com/docker/go-connections v0.6.0/go.mod h1:AahvXYshr6JgfUJGdDCs2b5EZG/vmaMAntpSFH5BFKE=
+ github.com/docker/go-units v0.5.0 h1:69rxXcBk27SvSaaxTtLh/8llcHD8vYHT7WSdRZ/jvr4=
+ github.com/docker/go-units v0.5.0/go.mod h1:fgPhTUdO+D/Jk86RDLlptpiXQzgHJF7gydDDbaIK4Dk=
++github.com/dop251/goja v0.0.0-20261024144015-2a9269b6b6de h1:TZ5ozdZ1dej3o0xsj2s+MUgM2UIm6pUSof+PoWLM2/g=
++github.com/dop251/goja v0.0.0-20261024144015-2a9269b6b6de/go.mod h1:Cp9NYOLrEKg/ypIRkUWYXWLuKAyyFGkDmGeJ95Sw0zI=
+ github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
+ github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
+ github.com/ebitengine/purego v0.8.4 h1:CF7LEKg5FFOsASUj0+QwaXf8Ht6TlFxg09+S9wz0omw=
+@@ -210,6 +214,8 @@ github.com/go-playground/universal-translator v0.18.1 h1:Bcnm0ZwsGyWbCzImXv+pAJn
+ github.com/go-playground/universal-translator v0.18.1/go.mod h1:xekY+UJKNuX9WP91TpwSH2VMlDf28Uj24BCp08ZFTUY=
+ github.com/go-playground/validator/v10 v10.14.0 h1:vgvQWe3XCz3gIeFDm/HnTIbj6UGmg/+t63MyGU2n5js=
+ github.com/go-playground/validator/v10 v10.14.0/go.mod h1:9iXMNT7sEkjXb0I+enO7QXmzG6QCsPWY4zveKFVRSyU=
++github.com/go-sourcemap/sourcemap v2.1.3+incompatible h1:W1iEw64niKVGogNgBN3ePyLFfuisuzeidWPMPWmECqU=
++github.com/go-sourcemap/sourcemap v2.1.3+incompatible/go.mod h1:F8jJfvm2KbVjc5NqelyYJmf/v5J0dwNLS2mL4sNA1Jg=
+ github.com/go-test/deep v1.0.3 h1:ZrJSEWsXzPOxaZnFteGEfooLba+ju3FYIbOrS+rQd68=
+ github.com/go-test/deep v1.0.3/go.mod h1:wGDj63lr65AM2AQyKZd/NYHGb0R+1RLqB8NKt3aSFNA=
+ github.com/go-viper/mapstructure/v2 v2.5.0 h1:vM5IJoUAy3d7zRSVtIwQgBj7BiWtMPfmPEgAXnvj1Ro=
+diff --git a/backend/internal/handler/admin/account_quota_script_handler.go b/backend/internal/handler/admin/account_quota_script_handler.go
+new file mode 100644
+index 0000000..314e892
+--- /dev/null
++++ b/backend/internal/handler/admin/account_quota_script_handler.go
+@@ -0,0 +1,94 @@
++package admin
++
++import (
++	"encoding/json"
++	"maps"
++	"net/http"
++	"strings"
++
++	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
++	"github.com/Wei-Shaw/sub2api/internal/service"
++	"github.com/gin-gonic/gin"
++)
++
++func (h *AccountHandler) TestQuotaScript(c *gin.Context) {
++	var request struct {
++		Script    string          `json:"script"`
++		AccountID *int64          `json:"account_id"`
++		APIKey    string          `json:"api_key"`
++		BaseURL   string          `json:"base_url"`
++		ProxyID   json.RawMessage `json:"proxy_id"`
++		Extra     map[string]any  `json:"extra"`
++	}
++	if err := c.ShouldBindJSON(&request); err != nil {
++		response.BadRequest(c, "Invalid quota script test request")
++		return
++	}
++	if strings.TrimSpace(request.Script) == "" {
++		response.BadRequest(c, "Quota script is empty")
++		return
++	}
++	account := &service.Account{Type: service.AccountTypeAPIKey}
++	if request.AccountID != nil {
++		stored, err := h.adminService.GetAccount(c.Request.Context(), *request.AccountID)
++		if err != nil {
++			response.ErrorFrom(c, err)
++			return
++		}
++		if stored.Type != service.AccountTypeAPIKey {
++			response.BadRequest(c, "Quota scripts require an API-key account")
++			return
++		}
++		*account = *stored
++	}
++	account.Credentials = maps.Clone(account.Credentials)
++	if account.Credentials == nil {
++		account.Credentials = make(map[string]any)
++	}
++	if strings.TrimSpace(request.APIKey) != "" {
++		account.Credentials["api_key"] = request.APIKey
++	}
++	if strings.TrimSpace(request.BaseURL) != "" {
++		account.Credentials["base_url"] = request.BaseURL
++		if account.RoutesProtocolByInbound() && account.IsAdaptiveAPIProtocol() {
++			baseURLs, _ := account.Credentials["api_base_urls"].(map[string]any)
++			baseURLs = maps.Clone(baseURLs)
++			if baseURLs == nil {
++				baseURLs = make(map[string]any)
++			}
++			baseURLs[service.APIProtocolChatCompletions] = request.BaseURL
++			account.Credentials["api_base_urls"] = baseURLs
++		}
++	}
++	account.Extra = maps.Clone(account.Extra)
++	if account.Extra == nil {
++		account.Extra = make(map[string]any)
++	}
++	maps.Copy(account.Extra, request.Extra)
++	if len(request.ProxyID) > 0 {
++		var proxyID *int64
++		if err := json.Unmarshal(request.ProxyID, &proxyID); err != nil {
++			response.BadRequest(c, "proxy_id must be an ID or null")
++			return
++		}
++		account.ProxyID, account.Proxy = proxyID, nil
++	}
++	if account.ProxyID != nil && (account.Proxy == nil || account.Proxy.ID != *account.ProxyID) {
++		proxy, err := h.adminService.GetProxy(c.Request.Context(), *account.ProxyID)
++		if err != nil {
++			response.ErrorFrom(c, err)
++			return
++		}
++		account.Proxy = proxy
++	}
++	if h.accountUsageService == nil {
++		response.InternalError(c, "Account usage service is not configured")
++		return
++	}
++	usage, err := h.accountUsageService.ExecuteQuotaScript(c.Request.Context(), account, request.Script)
++	if err != nil {
++		response.Error(c, http.StatusBadGateway, err.Error())
++		return
++	}
++	response.Success(c, usage)
++}
+diff --git a/backend/internal/repository/account_repo.go b/backend/internal/repository/account_repo.go
+index bd9b1b0..e19a5b4 100644
+--- a/backend/internal/repository/account_repo.go
++++ b/backend/internal/repository/account_repo.go
+@@ -3128,6 +3128,11 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
+ 		args = append(args, *updates.Schedulable)
+ 		idx++
+ 	}
++	if updates.ExpiresAt != nil {
++		setClauses = append(setClauses, "expires_at = $"+itoa(idx))
++		args = append(args, *updates.ExpiresAt)
++		idx++
++	}
+ 	if updates.ProbeEnabled != nil {
+ 		if updates.Extra == nil {
+ 			updates.Extra = make(map[string]any)
+@@ -3343,7 +3348,7 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
+ 		}
+ 	}
+ 	if rows > 0 && contextTx == nil {
+-		shouldSync := false
++		shouldSync := updates.ExpiresAt != nil
+ 		if updates.Status != nil && (*updates.Status == service.StatusError || *updates.Status == service.StatusDisabled) {
+ 			shouldSync = true
+ 		}
+diff --git a/backend/internal/server/routes/admin.go b/backend/internal/server/routes/admin.go
+index 0f477ed..9b87c98 100644
+--- a/backend/internal/server/routes/admin.go
++++ b/backend/internal/server/routes/admin.go
+@@ -414,6 +414,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
+ 		accounts.GET("/:id/usage", h.Admin.Account.GetUsage)
+ 		accounts.GET("/:id/today-stats", h.Admin.Account.GetTodayStats)
+ 		accounts.POST("/usage/batch", h.Admin.Account.GetBatchUsage)
++		accounts.POST("/quota-script/test", h.Admin.Account.TestQuotaScript)
+ 		accounts.POST("/today-stats/batch", h.Admin.Account.GetBatchTodayStats)
+ 		accounts.POST("/:id/clear-rate-limit", h.Admin.Account.ClearRateLimit)
+ 		accounts.POST("/:id/reset-quota", h.Admin.Account.ResetQuota)
+diff --git a/backend/internal/service/account_quota_script.go b/backend/internal/service/account_quota_script.go
+new file mode 100644
+index 0000000..e8c57c7
+--- /dev/null
++++ b/backend/internal/service/account_quota_script.go
+@@ -0,0 +1,374 @@
++package service
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"io"
++	"maps"
++	"math"
++	"net/http"
++	"reflect"
++	"strings"
++	"time"
++
++	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
++	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
++	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
++	"github.com/dop251/goja"
++)
++
++const QuotaScriptExtraKey = "quota_script"
++
++func AccountQuotaScript(account *Account) string {
++	if account == nil || account.Type != AccountTypeAPIKey {
++		return ""
++	}
++	script, _ := account.Extra[QuotaScriptExtraKey].(string)
++	if strings.TrimSpace(script) == "" {
++		return ""
++	}
++	return script
++}
++
++func normalizeQuotaScriptExtra(extra map[string]any) (map[string]any, error) {
++	value, provided := extra[QuotaScriptExtraKey]
++	if !provided {
++		return extra, nil
++	}
++	script, ok := value.(string)
++	if !ok {
++		return nil, infraerrors.BadRequest("INVALID_QUOTA_SCRIPT", "quota_script must be a string")
++	}
++	result := maps.Clone(extra)
++	if strings.TrimSpace(script) == "" {
++		delete(result, QuotaScriptExtraKey)
++	}
++	return result, nil
++}
++
++func (s *AccountUsageService) ExecuteQuotaScript(ctx context.Context, account *Account, script string) (usage *UsageInfo, err error) {
++	if account == nil || account.Type != AccountTypeAPIKey {
++		return nil, errors.New("Quota scripts require an API-key account")
++	}
++	if strings.TrimSpace(script) == "" {
++		return nil, errors.New("Quota script is empty")
++	}
++	ctx, cancel := context.WithTimeout(ctx, upstreamBillingProbeRequestTimeout)
++	defer cancel()
++	vm := goja.New()
++	vm.SetMaxCallStackSize(256)
++	finished := make(chan struct{})
++	defer close(finished)
++	go func() {
++		select {
++		case <-ctx.Done():
++			vm.Interrupt(ctx.Err())
++		case <-finished:
++		}
++	}()
++	defer func() {
++		if err == nil {
++			return
++		}
++		failure := err
++		diagnostic := "Quota script failed"
++		format, _ := goja.AssertFunction(vm.ToValue(func(goja.FunctionCall) goja.Value {
++			diagnostic = quotaScriptDiagnostic(account, failure)
++			return goja.Undefined()
++		}))
++		if _, formatErr := format(goja.Undefined()); formatErr != nil && ctx.Err() != nil {
++			diagnostic = ctx.Err().Error()
++		}
++		usage, err = nil, errors.New(diagnostic)
++	}()
++	if err = vm.Set("http", map[string]any{
++		"request": func(call goja.FunctionCall) goja.Value {
++			result, requestErr := s.quotaScriptRequest(ctx, account, call.Argument(0))
++			if requestErr != nil {
++				panic(vm.NewGoError(requestErr))
++			}
++			return vm.ToValue(result)
++		},
++	}); err != nil {
++		return nil, err
++	}
++	if _, err = vm.RunString(script); err != nil {
++		return nil, err
++	}
++	function, runErr := vm.RunString("queryQuota")
++	if runErr != nil {
++		return nil, runErr
++	}
++	query, ok := goja.AssertFunction(function)
++	if !ok {
++		return nil, errors.New("Define function queryQuota(ctx)")
++	}
++	baseURL := account.GetCredential("base_url")
++	if account.RoutesProtocolByInbound() && account.IsAdaptiveAPIProtocol() {
++		baseURL = account.GetCNProtocolBaseURL(APIProtocolChatCompletions)
++	}
++	result, callErr := query(goja.Undefined(), vm.ToValue(map[string]string{
++		"apiKey": account.GetCredential("api_key"), "baseUrl": baseURL,
++	}))
++	if callErr != nil {
++		return nil, callErr
++	}
++	validate, _ := goja.AssertFunction(vm.ToValue(func(call goja.FunctionCall) goja.Value {
++		var validationErr error
++		usage, validationErr = readQuotaScriptResult(call.Argument(0), time.Now())
++		if validationErr != nil {
++			panic(vm.NewGoError(validationErr))
++		}
++		return goja.Undefined()
++	}))
++	if _, err = validate(goja.Undefined(), result); err != nil {
++		return nil, err
++	}
++	if err = ctx.Err(); err != nil {
++		return nil, err
++	}
++	return usage, nil
++}
++
++func quotaScriptObject(value goja.Value, field string) (*goja.Object, error) {
++	object, ok := value.(*goja.Object)
++	if !ok || object.ClassName() != "Object" || object.ExportType() == reflect.TypeFor[*goja.Promise]() {
++		return nil, fmt.Errorf("%s must be an object", field)
++	}
++	return object, nil
++}
++
++func quotaScriptString(value goja.Value, field string) (string, error) {
++	if value == nil || goja.IsUndefined(value) || goja.IsNull(value) {
++		return "", fmt.Errorf("%s must be a string", field)
++	}
++	if _, object := value.(*goja.Object); object {
++		return "", fmt.Errorf("%s must be a string", field)
++	}
++	text, ok := value.Export().(string)
++	if !ok {
++		return "", fmt.Errorf("%s must be a string", field)
++	}
++	return text, nil
++}
++
++func quotaScriptNumber(value goja.Value, field string) (float64, error) {
++	if value == nil || goja.IsUndefined(value) || goja.IsNull(value) {
++		return 0, fmt.Errorf("%s must be a finite number", field)
++	}
++	if _, object := value.(*goja.Object); object {
++		return 0, fmt.Errorf("%s must be a finite number", field)
++	}
++	var number float64
++	switch primitive := value.Export().(type) {
++	case int64:
++		number = float64(primitive)
++	case float64:
++		number = primitive
++	default:
++		return 0, fmt.Errorf("%s must be a finite number", field)
++	}
++	if math.IsNaN(number) || math.IsInf(number, 0) {
++		return 0, fmt.Errorf("%s must be a finite number", field)
++	}
++	return number, nil
++}
++
++func quotaScriptPresent(value goja.Value) bool {
++	return value != nil && !goja.IsUndefined(value)
++}
++
++func readQuotaScriptResult(value goja.Value, now time.Time) (*UsageInfo, error) {
++	object, err := quotaScriptObject(value, "Result")
++	if err != nil {
++		return nil, err
++	}
++	usage := &UsageInfo{UpdatedAt: &now}
++	for _, window := range []struct {
++		key string
++		out **UsageProgress
++	}{
++		{"session", &usage.FiveHour}, {"day", &usage.OneDay}, {"week", &usage.SevenDay},
++		{"month", &usage.ThirtyDay}, {"total", &usage.QuotaTotal},
++	} {
++		raw := object.Get(window.key)
++		if !quotaScriptPresent(raw) {
++			continue
++		}
++		amount, err := quotaScriptObject(raw, window.key)
++		if err != nil {
++			return nil, err
++		}
++		used, err := quotaScriptNumber(amount.Get("used"), window.key+".used")
++		if err != nil {
++			return nil, err
++		}
++		limit, err := quotaScriptNumber(amount.Get("limit"), window.key+".limit")
++		if err != nil {
++			return nil, err
++		}
++		if used < 0 || limit <= 0 {
++			return nil, fmt.Errorf("%s requires used >= 0 and limit > 0", window.key)
++		}
++		progress := &UsageProgress{Utilization: used / limit * 100}
++		if math.IsInf(progress.Utilization, 0) {
++			return nil, fmt.Errorf("%s utilization is not finite", window.key)
++		}
++		if reset := amount.Get("reset_at"); quotaScriptPresent(reset) {
++			text, err := quotaScriptString(reset, window.key+".reset_at")
++			if err != nil {
++				return nil, err
++			}
++			timestamp, err := time.Parse(time.RFC3339, text)
++			if err != nil {
++				return nil, fmt.Errorf("%s.reset_at must be RFC 3339 text", window.key)
++			}
++			progress.ResetsAt = &timestamp
++			progress.RemainingSeconds = max(0, int(timestamp.Sub(now).Seconds()))
++		}
++		*window.out = progress
++	}
++	if balance := object.Get("balance"); quotaScriptPresent(balance) {
++		amount := balance
++		var unit goja.Value
++		if balanceObject, ok := balance.(*goja.Object); ok {
++			if balanceObject.ClassName() != "Object" {
++				return nil, errors.New("balance must be a number or an amount object")
++			}
++			amount = balanceObject.Get("amount")
++			if nestedUnit := balanceObject.Get("unit"); quotaScriptPresent(nestedUnit) {
++				unit = nestedUnit
++			}
++		}
++		if !quotaScriptPresent(unit) {
++			unit = object.Get("unit")
++		}
++		number, err := quotaScriptNumber(amount, "balance")
++		if err != nil {
++			return nil, err
++		}
++		usage.Balance = &number
++		if quotaScriptPresent(unit) {
++			text, err := quotaScriptString(unit, "unit")
++			if err != nil {
++				return nil, err
++			}
++			usage.BalanceUnit = strings.TrimSpace(text)
++			if usage.BalanceUnit == "" {
++				return nil, errors.New("unit must not be blank")
++			}
++		}
++	}
++	return usage, nil
++}
++
++func (s *AccountUsageService) quotaScriptRequest(ctx context.Context, account *Account, value goja.Value) (map[string]any, error) {
++	request, err := quotaScriptObject(value, "HTTP request")
++	if err != nil {
++		return nil, err
++	}
++	rawURL, err := quotaScriptString(request.Get("url"), "url")
++	if err != nil {
++		return nil, err
++	}
++	target, err := validateAccountUpstreamBaseURL(s.upstreamConfig, rawURL)
++	if err != nil {
++		return nil, fmt.Errorf("HTTP URL: %w", err)
++	}
++	method := http.MethodGet
++	if raw := request.Get("method"); quotaScriptPresent(raw) {
++		method, err = quotaScriptString(raw, "method")
++		if err != nil {
++			return nil, err
++		}
++	}
++	body := ""
++	if raw := request.Get("body"); quotaScriptPresent(raw) {
++		body, err = quotaScriptString(raw, "body")
++		if err != nil {
++			return nil, err
++		}
++	}
++	req, err := http.NewRequestWithContext(ctx, method, target, strings.NewReader(body))
++	if err != nil {
++		return nil, fmt.Errorf("HTTP request: %w", err)
++	}
++	if raw := request.Get("headers"); quotaScriptPresent(raw) {
++		headers, err := quotaScriptObject(raw, "headers")
++		if err != nil {
++			return nil, err
++		}
++		for _, key := range headers.Keys() {
++			text, err := quotaScriptString(headers.Get(key), "header value")
++			if err != nil {
++				return nil, err
++			}
++			req.Header.Set(key, text)
++		}
++	}
++	if s.upstreamHTTP == nil {
++		return nil, errors.New("HTTP transport is not configured")
++	}
++	proxyURL := ""
++	if account.ProxyID != nil {
++		if account.Proxy == nil || account.Proxy.ID != *account.ProxyID {
++			return nil, errors.New("Account proxy is not available")
++		}
++		proxyURL = account.Proxy.URL()
++	}
++	profile := HTTPUpstreamProfileDefault
++	if account.Platform == PlatformOpenAI {
++		profile = HTTPUpstreamProfileOpenAI
++	}
++	req = req.WithContext(WithHTTPUpstreamRedirectsDisabled(WithHTTPUpstreamProfile(req.Context(), profile)))
++	account.ApplyHeaderOverrides(req.Header)
++	var tlsProfile *tlsfingerprint.Profile
++	if s.tlsFPProfileService != nil {
++		tlsProfile = s.tlsFPProfileService.ResolveTLSProfile(account)
++	}
++	response, err := s.upstreamHTTP.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, tlsProfile)
++	if response != nil && response.Body != nil {
++		defer response.Body.Close()
++	}
++	if err != nil {
++		return nil, fmt.Errorf("HTTP request failed: %w", err)
++	}
++	if response == nil || response.Body == nil {
++		return nil, errors.New("HTTP response body is missing")
++	}
++	data, err := io.ReadAll(io.LimitReader(response.Body, upstreamBillingProbeMaxBodyBytes+1))
++	if err != nil {
++		return nil, fmt.Errorf("HTTP response read failed: %w", err)
++	}
++	if len(data) > upstreamBillingProbeMaxBodyBytes {
++		return nil, errors.New("HTTP response exceeds 64 KiB")
++	}
++	return map[string]any{"status": response.StatusCode, "body": string(data)}, nil
++}
++
++func quotaScriptDiagnostic(account *Account, err error) string {
++	message := logredact.RedactText(err.Error())
++	for _, key := range SensitiveCredentialKeys {
++		if secret := account.GetCredential(key); secret != "" {
++			message = strings.ReplaceAll(message, secret, "[redacted]")
++		}
++	}
++	if account.Proxy != nil {
++		for _, secret := range []string{account.Proxy.URL(), account.Proxy.Username, account.Proxy.Password} {
++			if secret != "" {
++				message = strings.ReplaceAll(message, secret, "[redacted]")
++			}
++		}
++	}
++	headers := make(http.Header)
++	account.ApplyHeaderOverrides(headers)
++	for _, values := range headers {
++		for _, secret := range values {
++			if secret != "" {
++				message = strings.ReplaceAll(message, secret, "[redacted]")
++			}
++		}
++	}
++	return message
++}
+diff --git a/backend/internal/service/account_service.go b/backend/internal/service/account_service.go
+index 7980a5c..ce7c9cf 100644
+--- a/backend/internal/service/account_service.go
++++ b/backend/internal/service/account_service.go
+@@ -165,6 +165,7 @@ type AccountBulkUpdate struct {
+ 	LoadFactor     *int
+ 	Status         *string
+ 	Schedulable    *bool
++	ExpiresAt      *time.Time
+ 	Credentials    map[string]any
+ 	Extra          map[string]any
+ 	ProbeEnabled   *bool
 diff --git a/backend/internal/service/account_test_service.go b/backend/internal/service/account_test_service.go
 index 2100331..dfca08b 100644
 --- a/backend/internal/service/account_test_service.go
@@ -43,10 +639,10 @@ index 2100331..dfca08b 100644
  		return "", err
 diff --git a/backend/internal/service/account_upstream_quota.go b/backend/internal/service/account_upstream_quota.go
 new file mode 100644
-index 0000000..046aeae
+index 0000000..ca9f87e
 --- /dev/null
 +++ b/backend/internal/service/account_upstream_quota.go
-@@ -0,0 +1,193 @@
+@@ -0,0 +1,218 @@
 +package service
 +
 +import (
@@ -75,19 +671,27 @@ index 0000000..046aeae
 +	Unit         string                `json:"unit"`
 +	Balance      *float64              `json:"balance"`
 +	Remaining    *float64              `json:"remaining"`
++	ExpiresAt    *time.Time            `json:"expires_at"`
 +	Quota        *upstreamQuotaAmount  `json:"quota"`
 +	RateLimits   []upstreamQuotaAmount `json:"rate_limits"`
 +	Subscription *struct {
-+		DailyUsed    *float64 `json:"daily_usage_usd"`
-+		DailyLimit   *float64 `json:"daily_limit_usd"`
-+		WeeklyUsed   *float64 `json:"weekly_usage_usd"`
-+		WeeklyLimit  *float64 `json:"weekly_limit_usd"`
-+		MonthlyUsed  *float64 `json:"monthly_usage_usd"`
-+		MonthlyLimit *float64 `json:"monthly_limit_usd"`
++		DailyUsed         *float64   `json:"daily_usage_usd"`
++		DailyLimit        *float64   `json:"daily_limit_usd"`
++		WeeklyUsed        *float64   `json:"weekly_usage_usd"`
++		WeeklyLimit       *float64   `json:"weekly_limit_usd"`
++		MonthlyUsed       *float64   `json:"monthly_usage_usd"`
++		MonthlyLimit      *float64   `json:"monthly_limit_usd"`
++		WeeklyWindowStart *time.Time `json:"weekly_window_start"`
++		ExpiresAt         *time.Time `json:"expires_at"`
 +	} `json:"subscription"`
 +}
 +
-+func parseUpstreamQuota(body []byte, now time.Time) (*UsageInfo, error) {
++type upstreamQuotaResult struct {
++	*UsageInfo
++	ExpiresAt *time.Time
++}
++
++func parseUpstreamQuota(body []byte, now time.Time) (*upstreamQuotaResult, error) {
 +	var response upstreamQuotaResponse
 +	if err := json.Unmarshal(body, &response); err != nil {
 +		return nil, err
@@ -98,7 +702,12 @@ index 0000000..046aeae
 +	if response.Unit != "" && response.Unit != "USD" {
 +		return nil, errors.New("unknown quota unit")
 +	}
-+	usage := &UsageInfo{UpdatedAt: &now}
++	usage := &upstreamQuotaResult{UsageInfo: &UsageInfo{UpdatedAt: &now}, ExpiresAt: response.ExpiresAt}
++	if subscription := response.Subscription; subscription != nil && subscription.ExpiresAt != nil {
++		if usage.ExpiresAt == nil || subscription.ExpiresAt.Before(*usage.ExpiresAt) {
++			usage.ExpiresAt = subscription.ExpiresAt
++		}
++	}
 +	progress := func(amount upstreamQuotaAmount) (*UsageProgress, error) {
 +		if amount.Unit != "" && amount.Unit != "USD" {
 +			return nil, errors.New("unknown quota unit")
@@ -144,12 +753,20 @@ index 0000000..046aeae
 +			}
 +		}
 +	} else if subscription := response.Subscription; subscription != nil {
++		// Use a direct seven-day offset for the reported subscription anchor.
++		// This display estimate does not apply the native legacy StartsAt correction.
++		var weeklyResetAt *time.Time
++		if subscription.WeeklyWindowStart != nil {
++			resetAt := subscription.WeeklyWindowStart.Add(7 * 24 * time.Hour)
++			weeklyResetAt = &resetAt
++		}
++
 +		var err error
 +		usage.OneDay, err = progress(upstreamQuotaAmount{Used: subscription.DailyUsed, Limit: subscription.DailyLimit})
 +		if err != nil {
 +			return nil, err
 +		}
-+		usage.SevenDay, err = progress(upstreamQuotaAmount{Used: subscription.WeeklyUsed, Limit: subscription.WeeklyLimit})
++		usage.SevenDay, err = progress(upstreamQuotaAmount{Used: subscription.WeeklyUsed, Limit: subscription.WeeklyLimit, ResetAt: weeklyResetAt})
 +		if err != nil {
 +			return nil, err
 +		}
@@ -224,6 +841,10 @@ index 0000000..046aeae
 +	if err != nil {
 +		return
 +	}
++	if remote.ExpiresAt != nil && s.accountRepo != nil && (account.ExpiresAt == nil || !account.ExpiresAt.Equal(*remote.ExpiresAt)) {
++		// Preserve native expiration settings. A failed write must not hide quota data.
++		_, _ = s.accountRepo.BulkUpdate(ctx, []int64{account.ID}, AccountBulkUpdate{ExpiresAt: remote.ExpiresAt})
++	}
 +	if remote.FiveHour != nil {
 +		usage.FiveHour = remote.FiveHour
 +	}
@@ -241,7 +862,7 @@ index 0000000..046aeae
 +	usage.UpdatedAt = remote.UpdatedAt
 +}
 diff --git a/backend/internal/service/account_usage_service.go b/backend/internal/service/account_usage_service.go
-index 746cb32..4570a4d 100644
+index 746cb32..27765f5 100644
 --- a/backend/internal/service/account_usage_service.go
 +++ b/backend/internal/service/account_usage_service.go
 @@ -9,10 +9,12 @@ import (
@@ -257,17 +878,18 @@ index 746cb32..4570a4d 100644
  	httppool "github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
  	openaipkg "github.com/Wei-Shaw/sub2api/internal/pkg/openai"
  	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-@@ -213,6 +215,9 @@ type UsageInfo struct {
+@@ -213,6 +215,10 @@ type UsageInfo struct {
  	GrokLocalUsageMonthly  *WindowStats     `json:"grok_local_usage_monthly,omitempty"`
  	// ThirtyDay is the official monthly billing window (used/monthlyLimit %).
  	ThirtyDay   *UsageProgress      `json:"thirty_day,omitempty"`
 +	OneDay      *UsageProgress      `json:"one_day,omitempty"`
 +	QuotaTotal  *UsageProgress      `json:"quota_total,omitempty"`
 +	Balance     *float64            `json:"balance,omitempty"`
++	BalanceUnit string              `json:"balance_unit,omitempty"`
  	GrokBilling *xai.BillingSummary `json:"grok_billing,omitempty"`
  
  	// Antigravity 账号级信息
-@@ -300,6 +305,8 @@ type AccountUsageService struct {
+@@ -300,6 +306,8 @@ type AccountUsageService struct {
  	openAIQuotaService      *OpenAIQuotaService
  	cache                   *UsageCache
  	identityCache           IdentityCache
@@ -276,10 +898,17 @@ index 746cb32..4570a4d 100644
  	tlsFPProfileService     *TLSFingerprintProfileService
  	agentIdentityTaskMu     sync.Mutex
  	agentIdentityWS         agentIdentityWSConnectionInvalidator
-@@ -346,6 +353,33 @@ func batchUsageErrorMessage(err error) string {
+@@ -346,6 +354,40 @@ func batchUsageErrorMessage(err error) string {
  }
  
  func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *Account, forceProbe bool) (*UsageInfo, error) {
++	if script := AccountQuotaScript(account); script != "" {
++		usage, err := s.ExecuteQuotaScript(ctx, account, script)
++		if err != nil {
++			return &UsageInfo{Error: err.Error()}, nil
++		}
++		return usage, nil
++	}
 +	if account == nil || !IsUpstreamBillingProbeIdentity(account.Platform, account.Type) || account.GetCredential("base_url") == "" {
 +		return s.getNativeUsageForAccount(ctx, account, forceProbe)
 +	}
@@ -310,6 +939,32 @@ index 746cb32..4570a4d 100644
  	if account == nil {
  		return nil, fmt.Errorf("account is required")
  	}
+diff --git a/backend/internal/service/admin_account.go b/backend/internal/service/admin_account.go
+index 3ebab25..5f88a5e 100644
+--- a/backend/internal/service/admin_account.go
++++ b/backend/internal/service/admin_account.go
+@@ -494,6 +494,10 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
+ 	if err := ValidateUpstreamRequestIDHeaderExtra(accountExtra); err != nil {
+ 		return nil, err
+ 	}
++	accountExtra, err = normalizeQuotaScriptExtra(accountExtra)
++	if err != nil {
++		return nil, err
++	}
+ 
+ 	// 绑定分组
+ 	groupIDs := input.GroupIDs
+@@ -603,6 +607,10 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
+ 		if err := ValidateUpstreamRequestIDHeaderExtra(normalizedExtra); err != nil {
+ 			return nil, err
+ 		}
++		normalizedExtra, err = normalizeQuotaScriptExtra(normalizedExtra)
++		if err != nil {
++			return nil, err
++		}
+ 	}
+ 	previousProbeIdentity := upstreamBillingProbeIdentity(account)
+ 	previousOllamaUsageIdentity := ollamaCloudUsageIdentity(account)
 diff --git a/backend/internal/service/wire.go b/backend/internal/service/wire.go
 index 688d729..2c3db48 100644
 --- a/backend/internal/service/wire.go
@@ -332,76 +987,544 @@ index 688d729..2c3db48 100644
  	return service
  }
  
+diff --git a/frontend/src/api/admin/accounts.ts b/frontend/src/api/admin/accounts.ts
+index e504775..d3a3caa 100644
+--- a/frontend/src/api/admin/accounts.ts
++++ b/frontend/src/api/admin/accounts.ts
+@@ -641,6 +641,20 @@ export async function syncUpstreamModels(id: number): Promise<SyncUpstreamModels
+   return data
+ }
+ 
++export interface QuotaScriptTestParams {
++  script: string
++  account_id?: number
++  api_key?: string
++  base_url?: string
++  proxy_id?: number | null
++  extra?: Record<string, unknown>
++}
++
++export async function testQuotaScript(params: QuotaScriptTestParams): Promise<AccountUsageInfo> {
++  const { data } = await apiClient.post<AccountUsageInfo>('/admin/accounts/quota-script/test', params)
++  return data
++}
++
+ export interface SyncUpstreamPreviewParams {
+   platform: string
+   type: string
+@@ -1162,6 +1176,7 @@ export const accountsAPI = {
+   getAvailableModels,
+   syncUpstreamModels,
+   syncUpstreamModelsPreview,
++  testQuotaScript,
+   generateAuthUrl,
+   exchangeCode,
+   refreshOpenAIToken,
 diff --git a/frontend/src/components/account/AccountUsageCell.vue b/frontend/src/components/account/AccountUsageCell.vue
-index a12527b..3b322b7 100644
+index a12527b..8ba35ec 100644
 --- a/frontend/src/components/account/AccountUsageCell.vue
 +++ b/frontend/src/components/account/AccountUsageCell.vue
-@@ -689,9 +689,26 @@
+@@ -618,18 +618,18 @@
+   <!-- Non-OAuth/Setup-Token accounts -->
+   <div ref="rootRef" v-else>
+     <!-- Gemini API Key accounts: show quota info -->
+-    <AccountQuotaInfo v-if="account.platform === 'gemini' && !isGeminiThirdPartyApiKey" :account="account" />
++    <AccountQuotaInfo v-if="!usesQuotaScript && account.platform === 'gemini' && !isGeminiThirdPartyApiKey" :account="account" />
+     <!-- Key/Bedrock accounts: show today stats + optional quota bars -->
+     <div v-else class="space-y-1">
+       <OllamaCloudUsageCell
+-        v-if="account.ollama_cloud_usage?.eligible"
++        v-if="!usesQuotaScript && account.ollama_cloud_usage?.eligible"
+         :account="account"
+         @updated="handleOllamaCloudUsageUpdated"
+       />
+       <!-- 与上方 CN 分支结构对齐：Ollama 与 OpenCode 用量身份互斥（基址 host 不同），
+            v-else-if 提供结构性互斥保证，不改变实际渲染结果。 -->
+       <OpenCodeGoUsageCell
+-        v-else-if="account.opencode_go_usage?.eligible"
++        v-else-if="!usesQuotaScript && account.opencode_go_usage?.eligible"
+         :account="account"
+         @updated="handleOpenCodeGoUsageUpdated"
+       />
+@@ -689,9 +689,16 @@
          color="purple"
        />
  
-+      <template v-if="account.type === 'apikey' && usageInfo">
-+        <UsageProgressBar
-+          v-for="window in upstreamUsageWindows"
-+          :key="window.label"
-+          :label="window.label"
-+          :utilization="window.progress.utilization"
-+          :resets-at="window.progress.resets_at"
-+          :color="window.color"
-+          :title="t('admin.accounts.usageWindow.upstreamQuota')"
-+        />
-+        <span
-+          v-if="usageInfo.balance != null"
-+          :class="['text-[10px] font-medium leading-4', platformTextClass(account.platform)]"
-+          :title="t('admin.accounts.usageWindow.upstreamQuota')"
-+        >USD {{ usageInfo.balance.toFixed(2) }}</span>
-+      </template>
++      <UpstreamQuotaUsage
++        v-if="account.type === 'apikey' && usageInfo"
++        :usage="usageInfo"
++        :show-error="usesQuotaScript"
++        :balance-class="platformTextClass(account.platform)"
++      />
 +
        <!-- No data at all -->
        <div
 -        v-if="!todayStats && !todayStatsLoading && !hasApiKeyQuota && !account.ollama_cloud_usage?.eligible && !account.opencode_go_usage?.eligible"
-+        v-if="!todayStats && !todayStatsLoading && !hasApiKeyQuota && !hasUpstreamUsage && !account.ollama_cloud_usage?.eligible && !account.opencode_go_usage?.eligible"
++        v-if="!todayStats && !todayStatsLoading && !hasApiKeyQuota && !hasUpstreamUsage && (usesQuotaScript || (!account.ollama_cloud_usage?.eligible && !account.opencode_go_usage?.eligible))"
          class="text-xs text-gray-400"
        >-</div>
      </div>
-@@ -708,6 +725,7 @@ import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
+@@ -703,12 +710,14 @@ import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'v
+ import { useI18n } from 'vue-i18n'
+ import { adminAPI } from '@/api/admin'
+ import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
+-import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
++import { buildAPIKeyUsageRefreshKey, buildOpenAIUsageRefreshKey, hasQuotaScript } from '@/utils/accountUsageRefresh'
+ import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
  import { formatCompactNumber } from '@/utils/format'
  import { isOfficialGeminiBaseUrl } from '@/utils/geminiExplicitCache'
  import { supportsAccountQuota } from '@/utils/accountQuota'
 +import { platformTextClass } from '@/utils/platformColors'
  import UsageProgressBar from './UsageProgressBar.vue'
++import UpstreamQuotaUsage from './UpstreamQuotaUsage.vue'
  import AccountQuotaInfo from './AccountQuotaInfo.vue'
  import ClaudeResetCreditsCell from './ClaudeResetCreditsCell.vue'
-@@ -764,6 +782,16 @@ const loading = ref(false)
+ import OpenAIQuotaResetCell from './OpenAIQuotaResetCell.vue'
+@@ -724,7 +733,7 @@ import {
+ import OpenCodeGoUsageCell from './OpenCodeGoUsageCell.vue'
+ 
+ // Module-level cache shared across all AccountUsageCell instances
+-const _usageCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
++const _usageCache = new Map<number, { data: AccountUsageInfo; ts: number; config: string }>()
+ const USAGE_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+ 
+ const props = withDefaults(
+@@ -764,6 +773,14 @@ const loading = ref(false)
  const activeQueryLoading = ref(false)
  const error = ref<string | null>(null)
  const usageInfo = ref<AccountUsageInfo | null>(null)
-+const upstreamUsageWindows = computed(() => [
-+  { label: '5h', progress: usageInfo.value?.five_hour, color: 'indigo' as const },
-+  { label: '1d', progress: usageInfo.value?.one_day, color: 'indigo' as const },
-+  { label: '7d', progress: usageInfo.value?.seven_day, color: 'emerald' as const },
-+  { label: '30d', progress: usageInfo.value?.thirty_day, color: 'purple' as const },
-+  { label: 'total', progress: usageInfo.value?.quota_total, color: 'purple' as const },
-+].flatMap(({ progress, ...window }) => progress ? [{ ...window, progress }] : []))
++const usesQuotaScript = computed(() => hasQuotaScript(props.account))
++const apiKeyUsageRefreshKey = computed(() => buildAPIKeyUsageRefreshKey(props.account))
++let usageRequest = 0
 +const hasUpstreamUsage = computed(() => props.account.type === 'apikey' && (
-+  upstreamUsageWindows.value.length > 0 || usageInfo.value?.balance != null
++  [usageInfo.value?.five_hour, usageInfo.value?.one_day, usageInfo.value?.seven_day,
++    usageInfo.value?.thirty_day, usageInfo.value?.quota_total].some(Boolean) ||
++  usageInfo.value?.balance != null || (usesQuotaScript.value && !!usageInfo.value?.error)
 +))
  watch(usageInfo, (usage) => {
    if (usage) emit('usage-loaded', usage)
  })
-@@ -804,6 +832,7 @@ const showUsageWindows = computed(() => {
+@@ -792,6 +809,7 @@ const isGeminiVertex = computed(() => {
+ 
+ // Show usage windows for OAuth and Setup Token accounts
+ const showUsageWindows = computed(() => {
++  if (usesQuotaScript.value) return false
+   // Gemini: we can always compute local usage windows from DB logs (simulated quotas).
+   // 第三方上游 API Key 没有模拟配额，按普通 Key 账号展示今日统计与额度进度条。
+   if (props.account.platform === 'gemini') return !isGeminiThirdPartyApiKey.value
+@@ -804,6 +822,8 @@ const showUsageWindows = computed(() => {
  })
  
  const shouldFetchUsage = computed(() => {
++  if (usesQuotaScript.value) return true
 +  if (props.account.type === 'apikey' && props.account.credentials?.base_url && !isMultiProtocolApiKeyPlatform(props.account.platform)) return true
    if (props.account.platform === 'anthropic') {
      return props.account.type === 'oauth' || props.account.type === 'setup-token'
    }
+@@ -1458,10 +1478,13 @@ const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?
+     return
+   }
+ 
++  const accountID = props.account.id
++  const config = apiKeyUsageRefreshKey.value
++  const currentRequest = ++usageRequest
+   // Check cache
+   if (!options?.bypassCache) {
+     const cached = _usageCache.get(props.account.id)
+-    if (cached && Date.now() - cached.ts < USAGE_CACHE_TTL) {
++    if (cached && cached.config === config && Date.now() - cached.ts < USAGE_CACHE_TTL) {
+       usageInfo.value = cached.data
+       loading.value = false
+       return
+@@ -1473,20 +1496,20 @@ const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?
+ 
+   try {
+ 		const fetchFn = () => options?.source
+-			? adminAPI.accounts.getUsage(props.account.id, options.source, options.bypassCache === true)
+-			: adminAPI.accounts.getUsage(props.account.id)
++			? adminAPI.accounts.getUsage(accountID, options.source, options.bypassCache === true)
++			: adminAPI.accounts.getUsage(accountID)
+     const result = await enqueueUsageRequest(props.account, fetchFn)
+-    if (!unmounted.value) {
++    if (!unmounted.value && currentRequest === usageRequest && accountID === props.account.id && config === apiKeyUsageRefreshKey.value) {
+       usageInfo.value = result
+-      _usageCache.set(props.account.id, { data: result, ts: Date.now() })
++      _usageCache.set(accountID, { data: result, ts: Date.now(), config })
+     }
+   } catch (e: any) {
+-    if (!unmounted.value) {
++    if (!unmounted.value && currentRequest === usageRequest) {
+       error.value = t('common.error')
+       console.error('Failed to load usage:', e)
+     }
+   } finally {
+-    if (!unmounted.value) loading.value = false
++    if (!unmounted.value && currentRequest === usageRequest) loading.value = false
+   }
+ }
+ 
+@@ -1726,6 +1749,16 @@ watch(openAIUsageRefreshKey, (nextKey, prevKey) => {
+   requestAutoLoad()
+ })
+ 
++watch(apiKeyUsageRefreshKey, (next, previous) => {
++  if (next === previous) return
++  usageRequest++
++  _usageCache.delete(props.account.id)
++  usageInfo.value = null
++  error.value = null
++  if (isBatchManaged.value) requestParentBatchUsage({ force: true })
++  else requestAutoLoad()
++})
++
+ watch(
+   () => props.manualRefreshToken,
+   (nextToken, prevToken) => {
+diff --git a/frontend/src/components/account/CreateAccountModal.vue b/frontend/src/components/account/CreateAccountModal.vue
+index cb013a4..b1a80d8 100644
+--- a/frontend/src/components/account/CreateAccountModal.vue
++++ b/frontend/src/components/account/CreateAccountModal.vue
+@@ -3238,6 +3238,13 @@
+         :type="form.type"
+       />
+ 
++      <QuotaScriptEditor
++        v-if="form.type === 'apikey' || (form.platform === 'antigravity' && antigravityAccountType === 'upstream')"
++        v-model="quotaScript"
++        :connection="quotaScriptConnection"
++        :active="show"
++      />
++
+       <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+         <div>
+           <label class="input-label">{{ t('admin.accounts.concurrency') }}</label>
+@@ -4154,6 +4161,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+ import Select from '@/components/common/Select.vue'
+ import HelpTooltip from '@/components/common/HelpTooltip.vue'
+ import UpstreamRequestIdHeaderField from '@/components/account/UpstreamRequestIdHeaderField.vue'
++import QuotaScriptEditor from '@/components/account/QuotaScriptEditor.vue'
+ import PlatformIcon from '@/components/common/PlatformIcon.vue'
+ import Icon from '@/components/icons/Icon.vue'
+ import ProxySelector from '@/components/common/ProxySelector.vue'
+@@ -4247,6 +4255,7 @@ const oauthStepTitle = computed(() => {
+ // Platform-specific hints for API Key type
+ // 上游ID：直接上游声明请求标识的响应头名，留空不记录。
+ const upstreamRequestIdHeader = ref('')
++const quotaScript = ref('')
+ const withUpstreamRequestIdHeader = <T extends Record<string, unknown> | undefined>(extra: T): T | Record<string, unknown> => {
+   const name = upstreamRequestIdHeader.value.trim()
+   if (!name) return extra
+@@ -5632,6 +5641,7 @@ const resetForm = () => {
+   apiKeyBaseUrl.value = 'https://api.anthropic.com'
+   apiKeyValue.value = ''
+   upstreamRequestIdHeader.value = ''
++  quotaScript.value = ''
+   upstreamBillingAutoProbeEnabled.value = true
+   editQuotaLimit.value = null
+   editQuotaDailyLimit.value = null
+@@ -5848,7 +5858,25 @@ const buildAnthropicExtra = (base?: Record<string, unknown>): Record<string, unk
+ }
+ 
+ // Helper function to create account with mixed channel warning handling
++const quotaScriptConnection = computed(() => {
++  const antigravity = form.platform === 'antigravity'
++  const adaptive = isMultiProtocolPlatform.value && apiProtocol.value === 'adaptive'
++  const adaptiveDefaults = adaptive
++    ? defaultCNAdaptiveBaseUrls(form.platform, currentOpenCodeOrCNMode()) : null
++  return {
++    api_key: (antigravity ? upstreamApiKey.value : apiKeyValue.value).trim(),
++    base_url: antigravity ? upstreamBaseUrl.value.trim()
++      : adaptive ? (adaptiveBaseUrls.value.chat_completions || adaptiveDefaults?.chat_completions || '').trim()
++      : apiKeyBaseUrl.value.trim() || apiKeyBaseUrlPlaceholder.value,
++    proxy_id: form.proxy_id ?? null,
++    extra: antigravity ? buildAntigravityExtra() : buildAnthropicExtra(buildOpenAIExtra())
++  }
++})
++
+ const doCreateAccount = async (payload: CreateAccountRequest) => {
++  if (payload.type === 'apikey' && quotaScript.value.trim()) {
++    payload = { ...payload, extra: { ...payload.extra, quota_script: quotaScript.value } }
++  }
+   const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
+     await submitCreateAccount(payload)
+   })
+diff --git a/frontend/src/components/account/EditAccountModal.vue b/frontend/src/components/account/EditAccountModal.vue
+index 288abd7..77b5cf7 100644
+--- a/frontend/src/components/account/EditAccountModal.vue
++++ b/frontend/src/components/account/EditAccountModal.vue
+@@ -1780,6 +1780,13 @@
+         :type="account.type"
+       />
+ 
++      <QuotaScriptEditor
++        v-if="account.type === 'apikey'"
++        v-model="quotaScript"
++        :connection="quotaScriptConnection"
++        :active="show"
++      />
++
+       <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+         <div>
+           <label class="input-label">{{ t('admin.accounts.concurrency') }}</label>
+@@ -3254,6 +3261,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+ import Select from '@/components/common/Select.vue'
+ import HelpTooltip from '@/components/common/HelpTooltip.vue'
+ import UpstreamRequestIdHeaderField from '@/components/account/UpstreamRequestIdHeaderField.vue'
++import QuotaScriptEditor from '@/components/account/QuotaScriptEditor.vue'
+ import Toggle from '@/components/common/Toggle.vue'
+ import Icon from '@/components/icons/Icon.vue'
+ import ProxySelector from '@/components/common/ProxySelector.vue'
+@@ -3785,6 +3793,9 @@ const upstreamBillingRateSyncEnabled = ref(false)
+ const mixedScheduling = ref(false) // For antigravity accounts: enable mixed scheduling
+ // 上游ID：直接上游声明请求标识的响应头名，留空不记录。
+ const upstreamRequestIdHeader = ref('')
++const quotaScript = ref('')
++const readQuotaScript = (extra: Account['extra']): string =>
++  typeof extra?.quota_script === 'string' ? extra.quota_script : ''
+ const readUpstreamRequestIdHeader = (extra: unknown): string => {
+   const value = (extra as Record<string, unknown> | undefined)?.upstream_request_id_header
+   return typeof value === 'string' ? value : ''
+@@ -4329,6 +4340,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
+ 	mixedScheduling.value = extra?.mixed_scheduling === true
+ 	allowOverages.value = extra?.allow_overages === true
+ 	upstreamRequestIdHeader.value = readUpstreamRequestIdHeader(extra)
++  quotaScript.value = readQuotaScript(extra)
+ 	openAIImagesUrlToB64JsonEnabled.value = extra?.images_url_to_b64_json === true
+ 	autoPause5hThreshold.value = typeof extra?.auto_pause_5h_threshold === 'number' ? extra.auto_pause_5h_threshold * 100 : null
+ 	autoPause7dThreshold.value = typeof extra?.auto_pause_7d_threshold === 'number' ? extra.auto_pause_7d_threshold * 100 : null
+@@ -6090,6 +6102,13 @@ const handleSubmit = async () => {
+       updatePayload.extra = newExtra
+     }
+ 
++    if (props.account.type === 'apikey') {
++      const extra: Record<string, unknown> = { ...(updatePayload.extra || props.account.extra || {}) }
++      if (quotaScript.value.trim()) extra.quota_script = quotaScript.value
++      else delete extra.quota_script
++      updatePayload.extra = extra
++    }
++
+     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
+       await submitUpdateAccount(accountID, updatePayload)
+     })
+@@ -6122,4 +6141,14 @@ const handleMixedChannelConfirm = async () => {
+ const handleMixedChannelCancel = () => {
+   clearMixedChannelDialog()
+ }
++
++const quotaScriptConnection = computed(() => ({
++  account_id: props.account?.id,
++  api_key: editApiKey.value.trim(),
++  base_url: isCNApiKeyAccount.value && editApiProtocol.value === 'adaptive'
++    ? (editAdaptiveBaseUrls.value.chat_completions || defaultBaseUrl.value).trim()
++    : editBaseUrl.value.trim() || defaultBaseUrl.value,
++  proxy_id: form.proxy_id ?? null,
++  extra: { ...props.account?.extra }
++}))
+ </script>
+diff --git a/frontend/src/components/account/QuotaScriptEditor.vue b/frontend/src/components/account/QuotaScriptEditor.vue
+new file mode 100644
+index 0000000..7dd3b29
+--- /dev/null
++++ b/frontend/src/components/account/QuotaScriptEditor.vue
+@@ -0,0 +1,107 @@
++<script setup lang="ts">
++import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
++import { useI18n } from 'vue-i18n'
++import { adminAPI } from '@/api/admin'
++import type { QuotaScriptTestParams } from '@/api/admin/accounts'
++import type { AccountUsageInfo } from '@/types'
++import HelpTooltip from '@/components/common/HelpTooltip.vue'
++import UpstreamQuotaUsage from './UpstreamQuotaUsage.vue'
++
++const props = defineProps<{ connection: Omit<QuotaScriptTestParams, 'script'>; active?: boolean }>()
++const model = defineModel<string>({ default: '' })
++const { t } = useI18n()
++const inputID = useId()
++const testing = ref(false)
++const usage = ref<AccountUsageInfo | null>(null)
++const error = ref('')
++let request = 0
++let inFlight = 0
++const example = `function queryQuota(ctx) {
++  const response = http.request({
++    url: ctx.baseUrl.replace(/\\/$/, '') + '/balance',
++    headers: { Authorization: 'Bearer ' + ctx.apiKey }
++  });
++  if (response.status !== 200) throw new Error('HTTP ' + response.status);
++  const data = JSON.parse(response.body);
++  return { balance: Number(data.remaining) };
++}`
++const tokens = computed(() => {
++  const source = (model.value || example) + '\n'
++  const pattern = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|\b(?:function|const|let|var|return|if|else|throw|new|true|false|null|undefined)\b|\b\d+(?:\.\d+)?\b/g
++  const parts: { text: string; color: string }[] = []
++  let offset = 0
++  for (const match of source.matchAll(pattern)) {
++    const start = match.index!
++    if (start > offset) parts.push({ text: source.slice(offset, start), color: '' })
++    const text = match[0]
++    const color = text.startsWith('/') ? 'text-gray-400'
++      : /^["'`]/.test(text) ? 'text-emerald-600 dark:text-emerald-400'
++      : /^\d/.test(text) ? 'text-amber-600 dark:text-amber-400'
++      : 'text-purple-600 dark:text-purple-400'
++    parts.push({ text, color })
++    offset = start + text.length
++  }
++  parts.push({ text: source.slice(offset), color: '' })
++  return parts
++})
++
++watch([model, () => props.connection, () => props.active], () => {
++  request++
++  usage.value = null
++  error.value = ''
++}, { deep: true, flush: 'sync' })
++onBeforeUnmount(() => { request++ })
++
++async function testScript() {
++  if (!model.value.trim() || inFlight > 0) return
++  const current = ++request
++  inFlight++
++  testing.value = true
++  usage.value = null
++  error.value = ''
++  try {
++    const result = await adminAPI.accounts.testQuotaScript({ ...props.connection, script: model.value })
++    if (current === request) usage.value = result
++  } catch (failure: unknown) {
++    if (current === request) {
++      error.value = (failure as { message?: string })?.message || t('common.error')
++    }
++  } finally {
++    inFlight--
++    if (inFlight === 0) testing.value = false
++  }
++}
++</script>
++
++<template>
++  <div>
++    <div class="flex items-center">
++      <label :for="inputID" class="input-label">{{ t('admin.accounts.quotaScript.label') }}</label>
++      <HelpTooltip width-class="w-max max-w-[calc(100vw-2rem)]">
++        <p class="whitespace-pre-line">{{ t('admin.accounts.quotaScript.help') }}</p>
++      </HelpTooltip>
++    </div>
++    <div class="grid">
++      <pre
++        aria-hidden="true"
++        :class="['input pointer-events-none m-0 overflow-hidden whitespace-pre-wrap break-words font-mono text-xs', { 'opacity-40': !model }]"
++        style="grid-area: 1 / 1; overflow-wrap: anywhere"
++      ><span v-for="(token, index) in tokens" :key="index" :class="token.color">{{ token.text }}</span></pre>
++      <textarea
++        :id="inputID"
++        v-model="model"
++        :aria-label="t('admin.accounts.quotaScript.label')"
++        :placeholder="example"
++        rows="1"
++        spellcheck="false"
++        class="input resize-none overflow-hidden bg-transparent font-mono text-xs text-transparent caret-gray-900 placeholder:text-transparent dark:bg-transparent dark:text-transparent dark:caret-gray-100 dark:placeholder:text-transparent"
++        style="grid-area: 1 / 1; overflow-wrap: anywhere"
++      />
++    </div>
++    <button type="button" class="btn btn-secondary btn-sm mt-2" :disabled="!model.trim() || testing" @click="testScript">
++      {{ testing ? t('common.loading') : t('admin.accounts.quotaScript.test') }}
++    </button>
++    <p v-if="error" class="mt-2 text-xs text-amber-600 dark:text-amber-400" role="alert">{{ error }}</p>
++    <UpstreamQuotaUsage v-if="usage" :usage="usage" show-error class="mt-2" />
++  </div>
++</template>
+diff --git a/frontend/src/components/account/UpstreamQuotaUsage.vue b/frontend/src/components/account/UpstreamQuotaUsage.vue
+new file mode 100644
+index 0000000..ffb196c
+--- /dev/null
++++ b/frontend/src/components/account/UpstreamQuotaUsage.vue
+@@ -0,0 +1,36 @@
++<script setup lang="ts">
++import { computed } from 'vue'
++import { useI18n } from 'vue-i18n'
++import type { AccountUsageInfo } from '@/types'
++import UsageProgressBar from './UsageProgressBar.vue'
++
++const props = defineProps<{ usage: AccountUsageInfo; showError?: boolean; balanceClass?: string }>()
++const { t } = useI18n()
++const windows = computed(() => [
++  { label: '5h', progress: props.usage.five_hour, color: 'indigo' as const },
++  { label: '1d', progress: props.usage.one_day, color: 'indigo' as const },
++  { label: '7d', progress: props.usage.seven_day, color: 'emerald' as const },
++  { label: '30d', progress: props.usage.thirty_day, color: 'purple' as const },
++  { label: 'total', progress: props.usage.quota_total, color: 'purple' as const }
++].flatMap(({ progress, ...window }) => progress ? [{ ...window, progress }] : []))
++</script>
++
++<template>
++  <div class="space-y-1">
++    <p v-if="showError && usage.error" class="text-xs text-amber-600 dark:text-amber-400">{{ usage.error }}</p>
++    <UsageProgressBar
++      v-for="window in windows"
++      :key="window.label"
++      :label="window.label"
++      :utilization="window.progress.utilization"
++      :resets-at="window.progress.resets_at"
++      :color="window.color"
++      :title="t('admin.accounts.usageWindow.upstreamQuota')"
++    />
++    <span
++      v-if="usage.balance != null"
++      :class="['text-[10px] font-medium leading-4', balanceClass]"
++      :title="t('admin.accounts.usageWindow.upstreamQuota')"
++    >{{ usage.balance_unit || 'USD' }} {{ usage.balance.toFixed(2) }}</span>
++  </div>
++</template>
+diff --git a/frontend/src/components/account/UsageProgressBar.vue b/frontend/src/components/account/UsageProgressBar.vue
+index bf08127..8910e64 100644
+--- a/frontend/src/components/account/UsageProgressBar.vue
++++ b/frontend/src/components/account/UsageProgressBar.vue
+@@ -54,8 +54,17 @@
+       </span>
+ 
+       <!-- Reset time -->
+-      <span v-if="shouldShowResetTime" class="shrink-0 text-[10px] text-gray-400">
++      <span v-if="shouldShowResetTime" class="group relative shrink-0 text-[10px] text-gray-400">
+         {{ formatResetTime }}
++        <span
++          v-if="resetsAt"
++          class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-max max-w-[320px] -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-3 py-2 text-center text-xs leading-relaxed text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
++        >
++          {{ t('dashboard.platformQuota.resetsAt', { time: formatDateTimeToMinute(resetsAt) }) }}
++          <span
++            class="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-gray-700"
++          ></span>
++        </span>
+       </span>
+     </div>
+   </div>
+@@ -66,7 +75,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+ import { useIntervalFn } from '@vueuse/core'
+ import { useI18n } from 'vue-i18n'
+ import type { WindowStats } from '@/types'
+-import { formatCompactNumber } from '@/utils/format'
++import { formatCompactNumber, formatDateTimeToMinute } from '@/utils/format'
+ 
+ const props = withDefaults(
+   defineProps<{
 diff --git a/frontend/src/i18n/locales/en/admin/accounts.ts b/frontend/src/i18n/locales/en/admin/accounts.ts
-index e1fa589..c5b3382 100644
+index e1fa589..7268765 100644
 --- a/frontend/src/i18n/locales/en/admin/accounts.ts
 +++ b/frontend/src/i18n/locales/en/admin/accounts.ts
-@@ -1649,6 +1649,7 @@ export default {
+@@ -3,6 +3,11 @@ export default {
+       title: 'Account Management',
+       description: 'Manage AI platform accounts and credentials',
+       createAccount: 'Create Account',
++      quotaScript: {
++        label: 'Custom quota script',
++        test: 'Test script',
++        help: 'Define synchronous queryQuota(ctx). ctx provides apiKey and baseUrl.\nhttp.request takes url and optional method, headers, body. It returns status and body.\nReturn optional session, day, week, month, or total objects with used, limit, and optional RFC 3339 reset_at.\nReturn balance as a number, or an object with amount and optional unit. Unit priority: balance.unit, root unit, USD.\nClear the script to use default detection.'
++      },
+       autoRefresh: 'Auto Refresh',
+       enableAutoRefresh: 'Enable auto refresh',
+       refreshInterval5s: '5 seconds',
+@@ -1649,6 +1654,7 @@ export default {
          noData: 'No usage data available for this account'
        },
        usageWindow: {
@@ -410,10 +1533,22 @@ index e1fa589..c5b3382 100644
          statsTitleDaily: 'Daily Usage Statistics',
          geminiProDaily: 'Pro',
 diff --git a/frontend/src/i18n/locales/zh/admin/accounts.ts b/frontend/src/i18n/locales/zh/admin/accounts.ts
-index 1092445..5f9a195 100644
+index 1092445..fef635e 100644
 --- a/frontend/src/i18n/locales/zh/admin/accounts.ts
 +++ b/frontend/src/i18n/locales/zh/admin/accounts.ts
-@@ -512,6 +512,7 @@ export default {
+@@ -3,6 +3,11 @@ export default {
+       title: '账号管理',
+       description: '管理 AI 平台账号和 Cookie',
+       createAccount: '添加账号',
++      quotaScript: {
++        label: '自定义额度脚本',
++        test: '测试脚本',
++        help: '定义同步函数 queryQuota(ctx)，ctx 提供 apiKey 和 baseUrl。\nhttp.request 接收 url 和可选的 method、headers、body，返回 status 和 body。\n可返回 session、day、week、month、total，分别提供 used、limit 和可选的 RFC 3339 reset_at。\nbalance 可为数值，或包含 amount 和可选 unit 的对象。单位依次使用 balance.unit、根级 unit、USD。\n清空脚本后使用默认检测。'
++      },
+       autoRefresh: '自动刷新',
+       enableAutoRefresh: '启用自动刷新',
+       refreshInterval5s: '5 秒',
+@@ -512,6 +517,7 @@ export default {
          }
        },
        usageWindow: {
@@ -422,21 +1557,58 @@ index 1092445..5f9a195 100644
          statsTitleDaily: '每日用量统计',
          geminiProDaily: 'Pro',
 diff --git a/frontend/src/types/index.ts b/frontend/src/types/index.ts
-index 1eac972..4f5939c 100644
+index 1eac972..33fe347 100644
 --- a/frontend/src/types/index.ts
 +++ b/frontend/src/types/index.ts
-@@ -1460,6 +1460,9 @@ export interface AccountUsageInfo {
+@@ -1460,6 +1460,10 @@ export interface AccountUsageInfo {
    seven_day_sonnet: UsageProgress | null
    seven_day_fable?: UsageProgress | null
    thirty_day?: UsageProgress | null
 +  one_day?: UsageProgress | null
 +  quota_total?: UsageProgress | null
 +  balance?: number | null
++  balance_unit?: string
    gemini_shared_daily?: UsageProgress | null
    gemini_pro_daily?: UsageProgress | null
    gemini_flash_daily?: UsageProgress | null
+diff --git a/frontend/src/utils/accountUsageRefresh.ts b/frontend/src/utils/accountUsageRefresh.ts
+index 121dae2..fa5cdaf 100644
+--- a/frontend/src/utils/accountUsageRefresh.ts
++++ b/frontend/src/utils/accountUsageRefresh.ts
+@@ -29,6 +29,31 @@ const isNonBlankString = (value: unknown): value is string => (
+   typeof value === 'string' && value.trim().length > 0
+ )
+ 
++export const hasQuotaScript = (account: Pick<Account, 'type' | 'extra'>): boolean =>
++  account.type === 'apikey' && isNonBlankString(account.extra?.quota_script)
++
++export const buildAPIKeyUsageRefreshKey = (account: Account): string => {
++  if (account.type !== 'apikey') return ''
++  const credentials = account.credentials ?? {}
++  const extra = account.extra ?? {}
++  return serializeSnapshotRefreshValue({
++    id: account.id,
++    platform: account.platform,
++    script: extra.quota_script,
++    base_url: credentials.base_url,
++    api_base_urls: credentials.api_base_urls,
++    api_protocol: credentials.api_protocol,
++    api_key: credentials.api_key,
++    header_override_enabled: credentials.header_override_enabled,
++    header_overrides: credentials.header_overrides,
++    proxy_id: account.proxy_id,
++    enable_tls_fingerprint: extra.enable_tls_fingerprint,
++    tls_fingerprint_profile_id: extra.tls_fingerprint_profile_id,
++    // Saved keys are redacted. A saved update can change the hidden key.
++    updated_at: account.updated_at
++  })
++}
++
+ export const buildOpenAIUsageRefreshKey = (account: Pick<Account, 'id' | 'platform' | 'type' | 'updated_at' | 'last_used_at' | 'rate_limit_reset_at' | 'extra'>): string => {
+   if (account.platform !== 'openai' || account.type !== 'oauth') {
+     return ''
 diff --git a/frontend/src/views/admin/AccountsView.vue b/frontend/src/views/admin/AccountsView.vue
-index 6d71337..8d18dd3 100644
+index 6d71337..44781dc 100644
 --- a/frontend/src/views/admin/AccountsView.vue
 +++ b/frontend/src/views/admin/AccountsView.vue
 @@ -521,6 +521,7 @@ import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.
@@ -447,11 +1619,74 @@ index 6d71337..8d18dd3 100644
  import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
  import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
  import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
-@@ -763,6 +764,7 @@ const buildDefaultTodayStats = (): WindowStats => ({
+@@ -531,7 +532,7 @@ import Icon from '@/components/icons/Icon.vue'
+ import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
+ import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
+ import { fetchAllAccountIds } from '@/utils/accountSelection'
+-import { buildGrokUsageRefreshKey, buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
++import { buildAPIKeyUsageRefreshKey, buildGrokUsageRefreshKey, buildOpenAIUsageRefreshKey, hasQuotaScript } from '@/utils/accountUsageRefresh'
+ import { formatDateTime, formatRelativeTime } from '@/utils/format'
+ import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
+ import { extractApiErrorMessage } from '@/utils/apiError'
+@@ -747,7 +748,7 @@ const usageBatchByAccountId = ref<Record<string, AccountUsageInfo | null>>({})
+ const usageBatchErrorByAccountId = ref<Record<string, string | null>>({})
+ const usageBatchLoadingByAccountId = ref<Record<string, boolean>>({})
+ const usageBatchRequestTokenByAccountId = ref<Record<string, number>>({})
+-const usageBatchCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
++const usageBatchCache = new Map<number, { data: AccountUsageInfo; ts: number; config: string }>()
+ const USAGE_BATCH_CACHE_TTL = 5 * 60 * 1000
+ const pendingUsageBatchIds = new Set<number>()
+ let usageBatchFlushTimer: ReturnType<typeof setTimeout> | null = null
+@@ -763,6 +764,8 @@ const buildDefaultTodayStats = (): WindowStats => ({
  })
  
  const accountSupportsBatchUsage = (account: Account) => {
++  if (hasQuotaScript(account)) return true
 +  if (account.type === 'apikey' && account.credentials?.base_url && !isMultiProtocolApiKeyPlatform(account.platform)) return true
    if (account.platform === 'anthropic') {
      return account.type === 'oauth' || account.type === 'setup-token'
    }
+@@ -810,6 +813,7 @@ const flushQueuedUsageBatch = async () => {
+     acc[String(accountID)] = usageBatchRequestTokenByAccountId.value[String(accountID)] ?? 0
+     return acc
+   }, {})
++  const configs = new Map(accounts.value.map(account => [account.id, buildAPIKeyUsageRefreshKey(account)]))
+ 
+   try {
+     const result = await adminAPI.accounts.getBatchUsage(accountIDs, force)
+@@ -831,7 +835,7 @@ const flushQueuedUsageBatch = async () => {
+       nextErrors[key] = errorMap[key] ?? null
+       nextLoading[key] = false
+       if (usage) {
+-        usageBatchCache.set(accountID, { data: usage, ts: now })
++        usageBatchCache.set(accountID, { data: usage, ts: now, config: configs.get(accountID) ?? '' })
+       } else {
+         usageBatchCache.delete(accountID)
+       }
+@@ -869,7 +873,7 @@ const queueBatchedUsage = (account: Account, options?: { force?: boolean }) => {
+     usageBatchCache.delete(cacheKey)
+   } else {
+     const cached = usageBatchCache.get(cacheKey)
+-    if (cached && Date.now() - cached.ts < USAGE_BATCH_CACHE_TTL) {
++    if (cached && cached.config === buildAPIKeyUsageRefreshKey(account) && Date.now() - cached.ts < USAGE_BATCH_CACHE_TTL) {
+       setUsageBatchState(cacheKey, cached.data, null)
+       setUsageBatchLoading(cacheKey, false)
+       return
+@@ -1396,6 +1400,17 @@ watch(accounts, (rows) => {
+   )
+ })
+ 
++watch(() => accounts.value.map(account => [account.id, buildAPIKeyUsageRefreshKey(account)] as const), (rows, previous) => {
++  const previousConfigs = new Map(previous)
++  for (const [id, config] of rows) {
++    if (!previousConfigs.has(id) || previousConfigs.get(id) === config) continue
++    usageBatchCache.delete(id)
++    usageBatchRequestTokenByAccountId.value[String(id)] = ++usageBatchRequestToken
++    setUsageBatchState(id, null, null)
++    setUsageBatchLoading(id, false)
++  }
++})
++
+ const isAnyModalOpen = computed(() => {
+   return (
+     showCreate.value ||
