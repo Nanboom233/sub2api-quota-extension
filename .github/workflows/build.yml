@@ -1,0 +1,163 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: Upstream Sub2API version tag
+        required: true
+        default: v0.2.19
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.15.2"
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: "1.27.3"
+          cache: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: "26.13.0"
+      - name: Prepare Corepack
+        run: |
+          npm install --global corepack@0.36.0
+          corepack enable
+      - name: Build and test
+        id: build
+        env:
+          UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p dist
+          python3 scripts/build.py 2>&1 | tee dist/build.log
+      - name: Validate outputs
+        env:
+          UPSTREAM_TAG: ${{ steps.build.outputs.tag }}
+        shell: bash
+        run: |
+          for platform in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64; do
+            suffix=""
+            [[ "$platform" == windows-* ]] && suffix=".exe"
+            for name in sub2api-plugins sub2api-plugins-installer; do
+              output="dist/build/$platform/$name-$UPSTREAM_TAG-$platform$suffix"
+              if [[ ! -s "$output" || ! -x "$output" ]]; then
+                echo "::error title=Invalid build output::$output is missing, empty, or not executable"
+                printf 'Output check failed: `%s` is missing, empty, or not executable.\n' "$output" >> "$GITHUB_STEP_SUMMARY"
+                exit 1
+              fi
+            done
+          done
+      - name: Upload Linux amd64 server
+        id: server_linux_amd64
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          path: dist/build/linux-amd64/sub2api-plugins-${{ steps.build.outputs.tag }}-linux-amd64
+          archive: false
+          if-no-files-found: error
+      - name: Upload Linux amd64 installer
+        id: installer_linux_amd64
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          path: dist/build/linux-amd64/sub2api-plugins-installer-${{ steps.build.outputs.tag }}-linux-amd64
+          archive: false
+          if-no-files-found: error
+      - name: Upload Linux arm64 server
+        id: server_linux_arm64
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          path: dist/build/linux-arm64/sub2api-plugins-${{ steps.build.outputs.tag }}-linux-arm64
+          archive: false
+          if-no-files-found: error
+      - name: Upload Linux arm64 installer
+        id: installer_linux_arm64
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          path: dist/build/linux-arm64/sub2api-plugins-installer-${{ steps.build.outputs.tag }}-linux-arm64
+          archive: false
+          if-no-files-found: error
+      - name: Upload macOS amd64 server
+        id: server_darwin_amd64
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          path: dist/build/darwin-amd64/sub2api-plugins-${{ steps.build.outputs.tag }}-darwin-amd64
+          archive: false
+          if-no-files-found: error
+      - name: Upload macOS amd64 installer
+        id: installer_darwin_amd64
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          path: dist/build/darwin-amd64/sub2api-plugins-installer-${{ steps.build.outputs.tag }}-darwin-amd64
+          archive: false
+          if-no-files-found: error
+      - name: Upload macOS arm64 server
+        id: server_darwin_arm64
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          path: dist/build/darwin-arm64/sub2api-plugins-${{ steps.build.outputs.tag }}-darwin-arm64
+          archive: false
+          if-no-files-found: error
+      - name: Upload macOS arm64 installer
+        id: installer_darwin_arm64
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          path: dist/build/darwin-arm64/sub2api-plugins-installer-${{ steps.build.outputs.tag }}-darwin-arm64
+          archive: false
+          if-no-files-found: error
+      - name: Upload Windows amd64 server
+        id: server_windows_amd64
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          path: dist/build/windows-amd64/sub2api-plugins-${{ steps.build.outputs.tag }}-windows-amd64.exe
+          archive: false
+          if-no-files-found: error
+      - name: Upload Windows amd64 installer
+        id: installer_windows_amd64
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          path: dist/build/windows-amd64/sub2api-plugins-installer-${{ steps.build.outputs.tag }}-windows-amd64.exe
+          archive: false
+          if-no-files-found: error
+      - name: Upload failure log
+        id: failure_log
+        if: ${{ failure() && !cancelled() && steps.build.outcome == 'failure' }}
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: build-log
+          path: dist/build.log
+          if-no-files-found: ignore
+      - name: Report result
+        if: ${{ always() && !cancelled() }}
+        env:
+          BUILD_STATUS: ${{ job.status }}
+          BUILD_STEP_STATUS: ${{ steps.build.outcome }}
+          UPLOAD_RESULTS: ${{ steps.server_linux_amd64.outcome }} ${{ steps.installer_linux_amd64.outcome }} ${{ steps.server_linux_arm64.outcome }} ${{ steps.installer_linux_arm64.outcome }} ${{ steps.server_darwin_amd64.outcome }} ${{ steps.installer_darwin_amd64.outcome }} ${{ steps.server_darwin_arm64.outcome }} ${{ steps.installer_darwin_arm64.outcome }} ${{ steps.server_windows_amd64.outcome }} ${{ steps.installer_windows_amd64.outcome }}
+          DIAGNOSTIC_URL: ${{ steps.failure_log.outputs.artifact-url }}
+        shell: bash
+        run: |
+          echo "Build result: $BUILD_STATUS" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$BUILD_STEP_STATUS" == failure ]]; then
+            echo "Build and test failed. See the Build and test step log." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [[ -n "$DIAGNOSTIC_URL" ]]; then
+            printf 'Diagnostics: [build-log](%s)\n' "$DIAGNOSTIC_URL" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [[ " $UPLOAD_RESULTS " == *" failure "* ]]; then
+            echo "Artifact upload failed. See the failed Upload step log." >> "$GITHUB_STEP_SUMMARY"
+          fi
