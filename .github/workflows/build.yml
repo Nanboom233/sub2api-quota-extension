@@ -1,7 +1,7 @@
-name: Build
+name: Build and Release
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Build {0} · {1}', inputs.upstream_tag, github.ref_name) || github.event.pull_request.title }}
 
 on:
-  push:
   pull_request:
   workflow_dispatch:
     inputs:
@@ -10,15 +10,55 @@ on:
         required: true
         default: v0.2.19
         type: string
+      linux_amd64:
+        description: Build Linux x86_64
+        type: boolean
+        default: true
+      linux_arm64:
+        description: Build Linux ARM64
+        type: boolean
+        default: true
+      darwin_amd64:
+        description: Build macOS Intel
+        type: boolean
+        default: true
+      darwin_arm64:
+        description: Build macOS Apple Silicon
+        type: boolean
+        default: true
+      windows_amd64:
+        description: Build Windows x86_64
+        type: boolean
+        default: true
+      release:
+        description: Publish a GitHub Release
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  SUB2API_BUILD_WORKSPACE: ${{ github.workspace }}/dist/work
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+  COREPACK_ENABLE_AUTO_PIN: "0"
+  COREPACK_ENABLE_PROJECT_SPEC: "0"
+
 jobs:
-  build:
+  build-release:
+    name: Build and Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
-      PYTHONDONTWRITEBYTECODE: "1"
+      GOMODCACHE: ${{ github.workspace }}/dist/cache/go-mod
+      GOCACHE: ${{ github.workspace }}/dist/cache/go-build
+      pnpm_config_store_dir: ${{ github.workspace }}/dist/cache/pnpm
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -28,136 +68,111 @@ jobs:
         with:
           python-version: "3.15.2"
       - uses: actions/setup-go@v7.0.0
+        id: go
         with:
           go-version: "1.27.3"
           cache: false
       - uses: actions/setup-node@v7.1.0
+        id: node
         with:
           node-version: "26.13.0"
       - name: Prepare Corepack
         run: |
           npm install --global corepack@0.36.0
           corepack enable
-      - name: Build and test
-        id: build
+      - name: Download and patch source
+        id: source
         env:
+          SUB2API_BUILD_STAGE: source
           UPSTREAM_TAG: ${{ inputs.upstream_tag }}
-        shell: bash
+          LINUX_AMD64: ${{ github.event_name != 'workflow_dispatch' || inputs.linux_amd64 }}
+          LINUX_ARM64: ${{ github.event_name != 'workflow_dispatch' || inputs.linux_arm64 }}
+          DARWIN_AMD64: ${{ github.event_name != 'workflow_dispatch' || inputs.darwin_amd64 }}
+          DARWIN_ARM64: ${{ github.event_name != 'workflow_dispatch' || inputs.darwin_arm64 }}
+          WINDOWS_AMD64: ${{ github.event_name != 'workflow_dispatch' || inputs.windows_amd64 }}
         run: |
-          set -o pipefail
-          mkdir -p dist
-          python3 scripts/build.py 2>&1 | tee dist/build.log
-      - name: Validate outputs
+          platforms=()
+          if [[ "$LINUX_AMD64" == true ]]; then platforms+=(linux-amd64); fi
+          if [[ "$LINUX_ARM64" == true ]]; then platforms+=(linux-arm64); fi
+          if [[ "$DARWIN_AMD64" == true ]]; then platforms+=(darwin-amd64); fi
+          if [[ "$DARWIN_ARM64" == true ]]; then platforms+=(darwin-arm64); fi
+          if [[ "$WINDOWS_AMD64" == true ]]; then platforms+=(windows-amd64); fi
+          export SUB2API_BUILD_PLATFORMS="${platforms[*]}"
+          python3 scripts/build.py
+          source_sha="$(git rev-parse HEAD)"
+          printf 'source_sha=%s\n' "$source_sha" >> "$GITHUB_OUTPUT"
+      - name: Load caches
+        uses: actions/cache/restore@v6.1.0
+        id: dependencies
+        with:
+          path: |
+            ${{ env.GOMODCACHE }}
+            ${{ env.GOCACHE }}
+            ${{ env.pnpm_config_store_dir }}
+          key: dependencies-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ steps.node.outputs.node-version }}-${{ steps.source.outputs.pnpm }}-${{ hashFiles('dist/work/source/backend/go.mod', 'dist/work/source/backend/go.sum', 'dist/work/source/frontend/pnpm-lock.yaml', 'scripts/build.py') }}-${{ github.sha }}
+          restore-keys: |
+            dependencies-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ steps.node.outputs.node-version }}-${{ steps.source.outputs.pnpm }}-${{ hashFiles('dist/work/source/backend/go.mod', 'dist/work/source/backend/go.sum', 'dist/work/source/frontend/pnpm-lock.yaml', 'scripts/build.py') }}-
+      - name: Test and build selected platforms
         env:
-          UPSTREAM_TAG: ${{ steps.build.outputs.tag }}
-        shell: bash
+          SUB2API_BUILD_STAGE: resume
+          UPSTREAM_TAG: ${{ steps.source.outputs.tag }}
+          SUB2API_BUILD_PLATFORMS: ${{ steps.source.outputs.platforms }}
+        run: python3 scripts/build.py
+      - name: Upload artifacts
+        uses: actions/github-script@v9.0.0
+        env:
+          UPSTREAM_TAG: ${{ steps.source.outputs.tag }}
+          SUB2API_BUILD_PLATFORMS: ${{ steps.source.outputs.platforms }}
+        with:
+          script: |
+            const {mkdtemp} = require('node:fs/promises');
+            const path = require('node:path');
+            const {pathToFileURL} = require('node:url');
+            const sdkDirectory = await mkdtemp(path.join(process.env.RUNNER_TEMP, 'artifact-sdk-'));
+            await exec.exec('npm', [
+              'install', '--prefix', sdkDirectory, '--no-audit', '--no-fund',
+              '--package-lock=false', '@actions/artifact@6.3.1'
+            ]);
+            const {DefaultArtifactClient} = await import(pathToFileURL(
+              path.join(sdkDirectory, 'node_modules/@actions/artifact/lib/artifact.js')
+            ).href);
+            const client = new DefaultArtifactClient();
+            for (const platform of process.env.SUB2API_BUILD_PLATFORMS.split(/\s+/)) {
+              const directory = path.join(process.env.GITHUB_WORKSPACE, 'dist', 'build', platform);
+              const suffix = platform.startsWith('windows-') ? '.exe' : '';
+              for (const component of ['', 'installer-']) {
+                const name = 'sub2api-plugins-' + component + process.env.UPSTREAM_TAG + '-' + platform + suffix;
+                await client.uploadArtifact(name, [path.join(directory, name)], directory, {skipArchive: true});
+              }
+            }
+      - name: Save caches
+        uses: actions/cache/save@v6.1.0
+        if: ${{ steps.dependencies.outputs.cache-hit != 'true' }}
+        with:
+          path: |
+            ${{ env.GOMODCACHE }}
+            ${{ env.GOCACHE }}
+            ${{ env.pnpm_config_store_dir }}
+          key: ${{ steps.dependencies.outputs.cache-primary-key }}
+      - name: Publish Release
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          UPSTREAM_TAG: ${{ steps.source.outputs.tag }}
+          SUB2API_BUILD_PLATFORMS: ${{ steps.source.outputs.platforms }}
         run: |
-          for platform in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64; do
+          assets=()
+          read -r -a platforms <<< "$SUB2API_BUILD_PLATFORMS"
+          for platform in "${platforms[@]}"; do
             suffix=""
-            [[ "$platform" == windows-* ]] && suffix=".exe"
-            for name in sub2api-plugins sub2api-plugins-installer; do
-              output="dist/build/$platform/$name-$UPSTREAM_TAG-$platform$suffix"
-              if [[ ! -s "$output" || ! -x "$output" ]]; then
-                echo "::error title=Invalid build output::$output is missing, empty, or not executable"
-                printf 'Output check failed: `%s` is missing, empty, or not executable.\n' "$output" >> "$GITHUB_STEP_SUMMARY"
-                exit 1
-              fi
+            if [[ "$platform" == windows-* ]]; then suffix=.exe; fi
+            for component in '' installer-; do
+              assets+=("dist/build/$platform/sub2api-plugins-${component}${UPSTREAM_TAG}-${platform}${suffix}")
             done
           done
-      - name: Upload Linux amd64 server
-        id: server_linux_amd64
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          path: dist/build/linux-amd64/sub2api-plugins-${{ steps.build.outputs.tag }}-linux-amd64
-          archive: false
-          if-no-files-found: error
-      - name: Upload Linux amd64 installer
-        id: installer_linux_amd64
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          path: dist/build/linux-amd64/sub2api-plugins-installer-${{ steps.build.outputs.tag }}-linux-amd64
-          archive: false
-          if-no-files-found: error
-      - name: Upload Linux arm64 server
-        id: server_linux_arm64
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          path: dist/build/linux-arm64/sub2api-plugins-${{ steps.build.outputs.tag }}-linux-arm64
-          archive: false
-          if-no-files-found: error
-      - name: Upload Linux arm64 installer
-        id: installer_linux_arm64
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          path: dist/build/linux-arm64/sub2api-plugins-installer-${{ steps.build.outputs.tag }}-linux-arm64
-          archive: false
-          if-no-files-found: error
-      - name: Upload macOS amd64 server
-        id: server_darwin_amd64
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          path: dist/build/darwin-amd64/sub2api-plugins-${{ steps.build.outputs.tag }}-darwin-amd64
-          archive: false
-          if-no-files-found: error
-      - name: Upload macOS amd64 installer
-        id: installer_darwin_amd64
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          path: dist/build/darwin-amd64/sub2api-plugins-installer-${{ steps.build.outputs.tag }}-darwin-amd64
-          archive: false
-          if-no-files-found: error
-      - name: Upload macOS arm64 server
-        id: server_darwin_arm64
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          path: dist/build/darwin-arm64/sub2api-plugins-${{ steps.build.outputs.tag }}-darwin-arm64
-          archive: false
-          if-no-files-found: error
-      - name: Upload macOS arm64 installer
-        id: installer_darwin_arm64
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          path: dist/build/darwin-arm64/sub2api-plugins-installer-${{ steps.build.outputs.tag }}-darwin-arm64
-          archive: false
-          if-no-files-found: error
-      - name: Upload Windows amd64 server
-        id: server_windows_amd64
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          path: dist/build/windows-amd64/sub2api-plugins-${{ steps.build.outputs.tag }}-windows-amd64.exe
-          archive: false
-          if-no-files-found: error
-      - name: Upload Windows amd64 installer
-        id: installer_windows_amd64
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          path: dist/build/windows-amd64/sub2api-plugins-installer-${{ steps.build.outputs.tag }}-windows-amd64.exe
-          archive: false
-          if-no-files-found: error
-      - name: Upload failure log
-        id: failure_log
-        if: ${{ failure() && !cancelled() && steps.build.outcome == 'failure' }}
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          name: build-log
-          path: dist/build.log
-          if-no-files-found: ignore
-      - name: Report result
-        if: ${{ always() && !cancelled() }}
-        env:
-          BUILD_STATUS: ${{ job.status }}
-          BUILD_STEP_STATUS: ${{ steps.build.outcome }}
-          UPLOAD_RESULTS: ${{ steps.server_linux_amd64.outcome }} ${{ steps.installer_linux_amd64.outcome }} ${{ steps.server_linux_arm64.outcome }} ${{ steps.installer_linux_arm64.outcome }} ${{ steps.server_darwin_amd64.outcome }} ${{ steps.installer_darwin_amd64.outcome }} ${{ steps.server_darwin_arm64.outcome }} ${{ steps.installer_darwin_arm64.outcome }} ${{ steps.server_windows_amd64.outcome }} ${{ steps.installer_windows_amd64.outcome }}
-          DIAGNOSTIC_URL: ${{ steps.failure_log.outputs.artifact-url }}
-        shell: bash
-        run: |
-          echo "Build result: $BUILD_STATUS" >> "$GITHUB_STEP_SUMMARY"
-          if [[ "$BUILD_STEP_STATUS" == failure ]]; then
-            echo "Build and test failed. See the Build and test step log." >> "$GITHUB_STEP_SUMMARY"
-          fi
-          if [[ -n "$DIAGNOSTIC_URL" ]]; then
-            printf 'Diagnostics: [build-log](%s)\n' "$DIAGNOSTIC_URL" >> "$GITHUB_STEP_SUMMARY"
-          fi
-          if [[ " $UPLOAD_RESULTS " == *" failure "* ]]; then
-            echo "Artifact upload failed. See the failed Upload step log." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          gh release delete "$UPSTREAM_TAG" --cleanup-tag --yes 2>/dev/null || true
+          gh release create "$UPSTREAM_TAG" "${assets[@]}" \
+            --target "$SOURCE_SHA" \
+            --title "Sub2API-Plugin ${SOURCE_SHA:0:7} (v${UPSTREAM_TAG#v})" \
+            --generate-notes

@@ -145,13 +145,15 @@ class BuildTests(unittest.TestCase):
                     self.assertTrue((suite.parent / "native_fixture.ts").is_file())
                     if failure == "vue":
                         raise subprocess.CalledProcessError(1, args)
-                    with (Path(cwd).parents[2] / "project/events").open("a") as log:
+                    with (seed.parent / "project/events").open("a") as log:
                         log.write("alpha:vue\n")
             elif args[:2] == ["go", "vet"]:
                 self.assertEqual(args[2:], ["./internal/server", "./internal/server/routes", "./internal/web"])
             elif args[:2] in (["go", "get"], ["go", "mod"]):
                 pass
             elif args[:2] == ["go", "build"]:
+                if failure == "server" and args[-1] != "." or failure == "installer" and args[-1] == ".":
+                    raise subprocess.CalledProcessError(1, args)
                 self.assertIn((env["GOOS"], env["GOARCH"]), build.TARGETS)
                 self.assertEqual(env["CGO_ENABLED"], "0")
                 metadata = "main.buildVersion" if args[-1] == "." else "main.Version"
@@ -159,7 +161,8 @@ class BuildTests(unittest.TestCase):
                 if args[-1] == ".":
                     selected = sorted(path.name for path in (Path(cwd) / "payloads").iterdir())
                     self.assertEqual(selected, sorted({f'{env["GOOS"]}-{env["GOARCH"]}.gz', f'linux-{env["GOARCH"]}.gz'}))
-                Path(args[args.index("-o") + 1]).write_bytes(b"built output")
+                if failure != "publish-missing" or args[-1] != ".":
+                    Path(args[args.index("-o") + 1]).write_bytes(b"built output")
             else:
                 if output is None:
                     real_run(argv, cwd, env)
@@ -183,12 +186,17 @@ class BuildTests(unittest.TestCase):
                 request = lookup.call_args.args[0]
                 self.assertEqual(request.full_url, "https://api.github.com/repos/Wei-Shaw/sub2api/releases/latest")
                 self.assertFalse(request.has_header("Authorization"))
-            with patch.object(build, "run", self.runner(seed, calls)):
-                artifacts = build.build(root, workspace, tag)
-            self.assertEqual([item.read_bytes() for item in artifacts], [b"built output"] * 10)
+            selected = ["darwin-arm64"]
+            with patch.object(build, "run", self.runner(seed, calls)), patch.object(build.platform, "machine", return_value="x86_64"), patch.dict(build.os.environ, {"GITHUB_OUTPUT": str(directory / "outputs")}):
+                build.run_stage(root, workspace, "source", tag, selected)
+                outputs = dict(line.split("=", 1) for line in (directory / "outputs").read_text().splitlines())
+                self.assertEqual(outputs, {"tag": tag, "pnpm": build.PNPM, "platforms": "darwin-arm64"})
+                self.assertTrue(all(path.read_text().startswith("previous ") for path in (root / "dist/build/linux-amd64").iterdir()))
+                artifacts = build.run_stage(root, workspace, "resume", tag, selected)
+            self.assertEqual([item.read_bytes() for item in artifacts], [b"built output"] * 2)
             expected = {
-                f"{system}-{arch}/sub2api-plugins{'-installer' if installer else ''}-{TAG}-{system}-{arch}{'.exe' if system == 'windows' else ''}"
-                for system, arch in build.TARGETS for installer in (False, True)
+                f"darwin-arm64/sub2api-plugins{'-installer' if installer else ''}-{TAG}-darwin-arm64"
+                for installer in (False, True)
             }
             self.assertEqual({item.relative_to(root / "dist/build").as_posix() for item in artifacts}, expected)
             self.assertEqual((root / "events").read_text().splitlines(), [
@@ -202,7 +210,8 @@ class BuildTests(unittest.TestCase):
             self.assertEqual(list((workspace / "source/frontend/src").iterdir()), [])
             patches = [Path(call[-1]).name for call in calls if call[:2] == ["git", "apply"]]
             self.assertEqual(patches, ["a.patch", "z.patch", "change.patch"])
-            self.assertEqual(sum(call[:2] == ["go", "build"] and call[-1] == "." for call in calls), len(build.TARGETS))
+            self.assertEqual(sum(call[:2] == ["go", "build"] and call[-1] == "." for call in calls), 1)
+            self.assertEqual(sum(call[:2] == ["go", "build"] and call[-1] != "." for call in calls), 3)
             for namespace, owner in (("", "common"), ("alpha/", "alpha"), ("zeta/", "zeta")):
                 license_dir = workspace / "installer/licenses" / namespace
                 self.assertEqual((license_dir / "LICENSE").read_text(), owner + " license\n")
@@ -212,6 +221,9 @@ class BuildTests(unittest.TestCase):
             settings = json.loads((workspace / "source/frontend/pnpm-workspace.yaml").read_text())
             self.assertEqual(settings["overrides"], {"fixture": "1.0.0"})
             self.assertTrue(settings["dangerouslyAllowAllBuilds"])
+            with patch.dict(build.os.environ, {"UPSTREAM_TAG": TAG}, clear=True), patch.object(build, "ROOT", root), patch.object(build.sys, "argv", ["build.py"]), patch.object(build, "build", return_value=artifacts) as complete, redirect_stdout(io.StringIO()):
+                self.assertEqual(build.main(), 0)
+                self.assertEqual(complete.call_args.args[2:], (TAG, build.selected_platforms()))
 
     def test_standalone_build(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -243,9 +255,10 @@ class BuildTests(unittest.TestCase):
             with patch.dict(build.os.environ, {"UPSTREAM_TAG": TAG}), patch.object(build.urllib.request, "urlopen") as lookup:
                 tag = build.resolve_upstream_tag()
                 lookup.assert_not_called()
-            with patch.object(build, "run", self.runner(seed, calls)):
-                artifacts = build.build(plugin, workspace, tag)
-            self.assertEqual([item.read_bytes() for item in artifacts], [b"built output"] * 10)
+            with patch.object(build, "run", self.runner(seed, calls)), patch.object(build.platform, "machine", return_value="x86_64"):
+                selected = ["linux-amd64"]
+                artifacts = build.build(plugin, workspace, tag, selected)
+            self.assertEqual([item.read_bytes() for item in artifacts], [b"built output"] * 2)
             self.assertEqual((root / "events").read_text().splitlines(), [
                 "alpha:python", "alpha:go", "alpha:native-first", "alpha:native-second",
                 "alpha:node", "alpha:vue", "alpha:common-build", "alpha:common-installer",
@@ -256,7 +269,7 @@ class BuildTests(unittest.TestCase):
             self.assertFalse((workspace / "installer/licenses/alpha").exists())
 
     def test_failures_stop_publication(self):
-        for failure in ("release", "source", "dependency", "patch", "test", "native", "vue"):
+        for failure in ("release", "source", "dependency", "patch", "test", "native", "vue", "server", "installer", "publish-missing"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
                 directory = Path(temporary)
                 root, seed = self.fixture(directory)
@@ -273,12 +286,13 @@ class BuildTests(unittest.TestCase):
                 with tempfile.TemporaryFile(mode="w+") as output:
                     try:
                         with redirect_stdout(output), redirect_stderr(output), patch.object(build, "run", self.runner(seed, calls, failure, output)), patch.dict(build.os.environ, {"UPSTREAM_TAG": ""}), patch.object(build.urllib.request, "urlopen", side_effect=OSError("Release lookup failed")):
-                            with self.assertRaises((RuntimeError, subprocess.CalledProcessError)) as caught:
+                            with self.assertRaises((OSError, RuntimeError, subprocess.CalledProcessError)) as caught:
                                 tag = build.resolve_upstream_tag() if failure == "release" else TAG
                                 build.build(root, workspace, tag)
                         if failure == "patch":
                             self.assertIn("alpha/a.patch", str(caught.exception))
-                        self.assertFalse(any(call[:2] == ["go", "build"] for call in calls))
+                        if failure not in ("server", "installer", "publish-missing"):
+                            self.assertFalse(any(call[:2] == ["go", "build"] for call in calls))
                         if failure == "patch":
                             self.assertFalse(any(Path(call[-1]).name == "z.patch" for call in calls))
                         if failure == "test":

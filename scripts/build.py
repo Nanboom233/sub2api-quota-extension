@@ -5,6 +5,7 @@ import argparse
 import gzip
 import json
 import os
+import platform
 from pathlib import Path, PurePosixPath
 import re
 import runpy
@@ -147,26 +148,78 @@ def publish_outputs(prepared, output):
             shutil.rmtree(publishing)
 
 
-def build(root, workspace, tag):
-    version = tag.removeprefix("v")
+def selected_platforms(value=None):
+    supported = [f"{system}-{arch}" for system, arch in TARGETS]
+    if value is None:
+        return supported
+    selected = value.split()
+    if not selected or any(target not in supported for target in selected):
+        raise RuntimeError("Select at least one supported build platform.")
+    return [target for target in supported if target in selected]
+
+
+def common_targets():
+    arch = {"x86_64": "amd64", "amd64": "amd64", "arm64": "arm64", "aarch64": "arm64"}[platform.machine().lower()]
+    return sorted({"linux-amd64", f"linux-{arch}"})
+
+
+def required_servers(selected):
+    required = set(common_targets())
+    for target in selected:
+        required.update((target, "linux-" + target.split("-")[1]))
+    return sorted(required)
+
+
+def build_environment(tag):
+    env = os.environ.copy()
+    for name in ("GOOS", "GOARCH", "CGO_ENABLED"):
+        env.pop(name, None)
+    env.update(GOFLAGS="-mod=readonly", PYTHONDONTWRITEBYTECODE="1", SUB2API_BUILD_VERSION=tag.removeprefix("v"), SUB2API_PNPM=PNPM)
+    env.setdefault("COREPACK_ENABLE_DOWNLOAD_PROMPT", "0")
+    env.setdefault("COREPACK_ENABLE_AUTO_PIN", "0")
+    env["COREPACK_ENABLE_PROJECT_SPEC"] = "0"
+    return env
+
+
+def source(root, workspace, tag):
     plugins = discover_plugins(root)
     tree = workspace / "source"
     run(["git", "clone", "--depth", "1", "--branch", tag, UPSTREAM, tree], workspace)
     run(["git", "checkout", "--detach", f"refs/tags/{tag}"], tree)
     apply_patches(tree, plugins)
+
+
+def server(workspace, tag, target):
+    system, arch = target.split("-")
+    env = dict(build_environment(tag), GOOS=system, GOARCH=arch, CGO_ENABLED="0")
+    binary = workspace / "binaries" / artifact_name(system, arch, tag)
+    binary.parent.mkdir(exist_ok=True)
+    run(["go", "build", "-tags=embed", "-trimpath", f"-ldflags=-s -w -X main.Version={tag.removeprefix('v')} -X main.BuildType=release", "-o", binary, "./cmd/server"], workspace / "source/backend", env)
+    return binary
+
+
+def embed_payloads(workspace, staging, tag, targets):
+    payloads = staging / "payloads"
+    if payloads.exists():
+        shutil.rmtree(payloads)
+    payloads.mkdir()
+    for target in sorted(set(targets)):
+        system, arch = target.split("-")
+        binary = workspace / "binaries" / artifact_name(system, arch, tag)
+        with binary.open("rb") as original, gzip.open(payloads / (target + ".gz"), "wb") as compressed:
+            shutil.copyfileobj(original, compressed)
+
+
+def prepare(root, workspace, tag):
+    tree = workspace / "source"
+    plugins = discover_plugins(root)
+    env = build_environment(tag)
     frontend = tree / "frontend"
     settings = json.loads((frontend / "package.json").read_text()).get("pnpm", {})
     # pnpm 12 moved overrides and build settings out of package.json and .npmrc.
     # Keep upstream pnpm 9's dependency-script behavior without changing its lockfile.
     settings.update(ignoreScripts=False, dangerouslyAllowAllBuilds=True, strictPeerDependencies=False)
     (frontend / "pnpm-workspace.yaml").write_text(json.dumps(settings, indent=2) + "\n")
-    env = os.environ.copy()
-    for name in ("GOOS", "GOARCH", "CGO_ENABLED"):
-        env.pop(name, None)
-    env.update(GOFLAGS="-mod=readonly", PYTHONDONTWRITEBYTECODE="1", SUB2API_BUILD_VERSION=version, SUB2API_PNPM=PNPM)
-    env.setdefault("COREPACK_ENABLE_DOWNLOAD_PROMPT", "0")
-    env.setdefault("COREPACK_ENABLE_AUTO_PIN", "0")
-    env["COREPACK_ENABLE_PROJECT_SPEC"] = "0"
     run(["corepack", "prepare", PNPM, "--activate"], root, env)
     run(["corepack", PNPM, "install", "--frozen-lockfile"], tree / "frontend", env)
     run(["corepack", PNPM, "build"], tree / "frontend", env)
@@ -174,53 +227,99 @@ def build(root, workspace, tag):
         test_entries(plugin, tree, env, common=False)
     run(["go", "vet", "./internal/server", "./internal/server/routes", "./internal/web"], tree / "backend", env)
     staging = prepare_installer(workspace, tree, root, plugins, env)
-    binaries = workspace / "binaries"
-    binaries.mkdir()
-    for system, arch in TARGETS:
-        target = dict(env, GOOS=system, GOARCH=arch, CGO_ENABLED="0")
-        binary = binaries / f"{system}-{arch}"
-        run(["go", "build", "-tags=embed", "-trimpath", f"-ldflags=-s -w -X main.Version={version} -X main.BuildType=release", "-o", binary, "./cmd/server"], tree / "backend", target)
-    payloads = staging / "payloads"
-    payloads.mkdir()
-    for binary in binaries.iterdir():
-        with binary.open("rb") as original, gzip.open(payloads / (binary.name + ".gz"), "wb") as compressed:
-            shutil.copyfileobj(original, compressed)
+    for target in common_targets():
+        server(workspace, tag, target)
+    embed_payloads(workspace, staging, tag, common_targets())
     test_entries(root, tree, env, staging, common=True if root in plugins else None)
+
+
+def installer(workspace, tag, target):
+    system, arch = target.split("-")
+    staging = workspace / "installer"
+    embed_payloads(workspace, staging, tag, (target, f"linux-{arch}"))
+    binary = workspace / "installers" / artifact_name(system, arch, tag, installer=True)
+    binary.parent.mkdir(exist_ok=True)
+    env = dict(build_environment(tag), GOOS=system, GOARCH=arch, CGO_ENABLED="0")
+    run(["go", "build", "-trimpath", f"-ldflags=-s -w -X main.buildVersion={tag.removeprefix('v')}", "-o", binary, "."], staging, env)
+    return binary
+
+
+def publish(root, workspace, tag, selected):
     prepared = workspace / "outputs"
     prepared.mkdir()
-    for system, arch in TARGETS:
-        platform = f"{system}-{arch}"
-        directory = prepared / platform
+    for target in selected:
+        system, arch = target.split("-")
+        directory = prepared / target
         directory.mkdir()
-        binary = directory / artifact_name(system, arch, tag)
-        shutil.copyfile(binaries / platform, binary)
-        binary.chmod(0o755)
-        selected = {platform, f"linux-{arch}"}
-        for payload in payloads.iterdir():
-            if payload.name.removesuffix(".gz") not in selected:
-                payload.unlink()
-        for name in selected:
-            if not (payloads / (name + ".gz")).exists():
-                with (binaries / name).open("rb") as original, gzip.open(payloads / (name + ".gz"), "wb") as compressed:
-                    shutil.copyfileobj(original, compressed)
-        target = dict(env, GOOS=system, GOARCH=arch, CGO_ENABLED="0")
-        run(["go", "build", "-trimpath", f"-ldflags=-s -w -X main.buildVersion={version}", "-o", directory / artifact_name(system, arch, tag, installer=True), "."], staging, target)
+        for kind, is_installer in (("binaries", False), ("installers", True)):
+            name = artifact_name(system, arch, tag, installer=is_installer)
+            binary = directory / name
+            shutil.copyfile(workspace / kind / name, binary)
+            binary.chmod(0o755)
     output = root / "dist/build"
     publish_outputs(prepared, output)
     return sorted(path for path in output.glob("*/*") if path.is_file())
 
 
+def build(root, workspace, tag, selected=None):
+    selected = selected if selected is not None else selected_platforms()
+    source(root, workspace, tag)
+    return resume(root, workspace, tag, selected)
+
+
+def resume(root, workspace, tag, selected):
+    prepare(root, workspace, tag)
+    for target in sorted(set(required_servers(selected)) - set(common_targets())):
+        server(workspace, tag, target)
+    for target in selected:
+        installer(workspace, tag, target)
+    return publish(root, workspace, tag, selected)
+
+
+def stage_outputs(tag, selected):
+    outputs = {
+        "tag": tag,
+        "pnpm": PNPM,
+        "platforms": " ".join(selected),
+    }
+    if os.environ.get("GITHUB_OUTPUT"):
+        with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+            for name, value in outputs.items():
+                print(f"{name}={value}", file=output)
+
+
+def run_stage(root, workspace, stage, tag, selected):
+    if stage == "source":
+        source(root, workspace, tag)
+        stage_outputs(tag, selected)
+    elif stage == "resume":
+        return resume(root, workspace, tag, selected)
+    else:
+        raise RuntimeError(f"Unknown build stage: {stage}")
+    return []
+
+
 def main():
     argparse.ArgumentParser(description=__doc__).parse_args()
     try:
-        tag = resolve_upstream_tag()
-        if os.environ.get("GITHUB_OUTPUT"):
-            with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-                print(f"tag={tag}", file=output)
-        with tempfile.TemporaryDirectory(prefix="sub2api-plugins-") as temporary:
-            print(f"Build workspace: {temporary}", flush=True)
-            for output in build(ROOT, Path(temporary), tag):
-                print(output, flush=True)
+        stage = os.environ.get("SUB2API_BUILD_STAGE")
+        selected = selected_platforms(os.environ.get("SUB2API_BUILD_PLATFORMS"))
+        tag = resolve_upstream_tag() if not stage or stage == "source" else os.environ.get("UPSTREAM_TAG")
+        if not tag:
+            raise RuntimeError("Pass the resolved UPSTREAM_TAG to the resumed build stage.")
+        if stage:
+            location = os.environ.get("SUB2API_BUILD_WORKSPACE")
+            if not location:
+                raise RuntimeError("SUB2API_BUILD_WORKSPACE is required for a resumed build stage.")
+            workspace = Path(location).resolve()
+            workspace.mkdir(parents=True, exist_ok=True)
+            outputs = run_stage(ROOT, workspace, stage, tag, selected)
+        else:
+            with tempfile.TemporaryDirectory(prefix="sub2api-plugins-") as temporary:
+                print(f"Build workspace: {temporary}", flush=True)
+                outputs = build(ROOT, Path(temporary), tag, selected)
+        for output in outputs:
+            print(output, flush=True)
     except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"Build failed: {error}. No new outputs were published.", file=sys.stderr)
         return 1

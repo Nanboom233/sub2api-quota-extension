@@ -76,7 +76,20 @@ func writeState(path string, state fakeState) {
 	if err != nil {
 		panic(err)
 	}
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	file, err := os.CreateTemp(filepath.Dir(path), ".state-*")
+	if err != nil {
+		panic(err)
+	}
+	defer os.Remove(file.Name())
+	if _, err := file.Write(data); err != nil {
+		file.Close()
+		panic(err)
+	}
+	if err := file.Close(); err != nil {
+		panic(err)
+	}
+	// A killed helper must not leave the shared state file truncated.
+	if err := os.Rename(file.Name(), path); err != nil {
 		panic(err)
 	}
 }
