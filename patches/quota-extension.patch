@@ -2,7 +2,7 @@ diff --git a/backend/cmd/server/wire_gen.go b/backend/cmd/server/wire_gen.go
 index 53cef32..395d25a 100644
 --- a/backend/cmd/server/wire_gen.go
 +++ b/backend/cmd/server/wire_gen.go
-@@ -202,7 +202,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
+@@ -206,7 +206,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
  	openAIReferralClient := repository.NewOpenAIReferralClient(privacyClientFactory)
  	openAIQuotaService := service.ProvideOpenAIQuotaService(accountRepository, proxyRepository, openAITokenProvider, privacyClientFactory, openAIReferralClient, openAIGatewayService)
  	usageCache := service.NewUsageCache()
@@ -15,7 +15,7 @@ diff --git a/backend/go.mod b/backend/go.mod
 index c853d27..7c1a249 100644
 --- a/backend/go.mod
 +++ b/backend/go.mod
-@@ -18,6 +18,7 @@ require (
+@@ -19,6 +19,7 @@ require (
  	github.com/cespare/xxhash/v2 v2.3.0
  	github.com/coder/websocket v1.8.14
  	github.com/dgraph-io/ristretto v0.2.0
@@ -23,7 +23,7 @@ index c853d27..7c1a249 100644
  	github.com/gin-gonic/gin v1.9.1
  	github.com/go-playground/validator/v10 v10.14.0
  	github.com/go-webauthn/webauthn v0.17.4
-@@ -103,7 +104,7 @@ require (
+@@ -105,7 +106,7 @@ require (
  	github.com/cpuguy83/dockercfg v0.3.2 // indirect
  	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
  	github.com/distribution/reference v0.6.0 // indirect
@@ -32,7 +32,7 @@ index c853d27..7c1a249 100644
  	github.com/docker/docker v28.5.1+incompatible // indirect
  	github.com/docker/go-connections v0.6.0 // indirect
  	github.com/docker/go-units v0.5.0 // indirect
-@@ -121,6 +122,7 @@ require (
+@@ -123,6 +124,7 @@ require (
  	github.com/go-openapi/inflect v0.19.0 // indirect
  	github.com/go-playground/locales v0.14.1 // indirect
  	github.com/go-playground/universal-translator v0.18.1 // indirect
@@ -40,10 +40,10 @@ index c853d27..7c1a249 100644
  	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
  	github.com/go-webauthn/x v0.2.6 // indirect
  	github.com/goccy/go-json v0.10.2 // indirect
-@@ -128,6 +130,7 @@ require (
- 	github.com/google/go-cmp v0.7.0 // indirect
+@@ -131,6 +133,7 @@ require (
  	github.com/google/go-querystring v1.1.0 // indirect
  	github.com/google/go-tpm v0.9.8 // indirect
+ 	github.com/google/jsonschema-go v0.4.2 // indirect
 +	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
  	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.3 // indirect
  	github.com/hashicorp/hcl v1.0.0 // indirect
@@ -52,7 +52,7 @@ diff --git a/backend/go.sum b/backend/go.sum
 index ff16ab7..dbb4696 100644
 --- a/backend/go.sum
 +++ b/backend/go.sum
-@@ -163,12 +163,16 @@ github.com/distribution/reference v0.6.0 h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5Qvfr
+@@ -165,12 +165,16 @@ github.com/distribution/reference v0.6.0 h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5Qvfr
  github.com/distribution/reference v0.6.0/go.mod h1:BbU0aIcezP1/5jX/8MP0YiH4SdvB5Y4f/wlDRiLyi3E=
  github.com/dlclark/regexp2/v2 v2.1.0 h1:jHXRmHRZGbuQzDZjMlCAXOvQb75iv3HyLDzXGj5H1AY=
  github.com/dlclark/regexp2/v2 v2.1.0/go.mod h1:Bz5TMy5d8fPK0ximH0Yi9KvsRHNnvXqUx9XG6a4wB+I=
@@ -69,7 +69,7 @@ index ff16ab7..dbb4696 100644
  github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
  github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
  github.com/ebitengine/purego v0.8.4 h1:CF7LEKg5FFOsASUj0+QwaXf8Ht6TlFxg09+S9wz0omw=
-@@ -210,6 +214,8 @@ github.com/go-playground/universal-translator v0.18.1 h1:Bcnm0ZwsGyWbCzImXv+pAJn
+@@ -212,6 +216,8 @@ github.com/go-playground/universal-translator v0.18.1 h1:Bcnm0ZwsGyWbCzImXv+pAJn
  github.com/go-playground/universal-translator v0.18.1/go.mod h1:xekY+UJKNuX9WP91TpwSH2VMlDf28Uj24BCp08ZFTUY=
  github.com/go-playground/validator/v10 v10.14.0 h1:vgvQWe3XCz3gIeFDm/HnTIbj6UGmg/+t63MyGU2n5js=
  github.com/go-playground/validator/v10 v10.14.0/go.mod h1:9iXMNT7sEkjXb0I+enO7QXmzG6QCsPWY4zveKFVRSyU=
@@ -207,7 +207,7 @@ diff --git a/backend/internal/server/routes/admin.go b/backend/internal/server/r
 index 0f477ed..9b87c98 100644
 --- a/backend/internal/server/routes/admin.go
 +++ b/backend/internal/server/routes/admin.go
-@@ -414,6 +414,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
+@@ -407,6 +407,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
  		accounts.GET("/:id/usage", h.Admin.Account.GetUsage)
  		accounts.GET("/:id/today-stats", h.Admin.Account.GetTodayStats)
  		accounts.POST("/usage/batch", h.Admin.Account.GetBatchUsage)
@@ -875,10 +875,10 @@ index 746cb32..27765f5 100644
  	"time"
  
 +	"github.com/Wei-Shaw/sub2api/internal/config"
+ 	"github.com/Wei-Shaw/sub2api/internal/pkg/adminaccess"
  	httppool "github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
  	openaipkg "github.com/Wei-Shaw/sub2api/internal/pkg/openai"
- 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-@@ -213,6 +215,10 @@ type UsageInfo struct {
+@@ -232,6 +234,10 @@ type UsageInfo struct {
  	GrokLocalUsageMonthly  *WindowStats     `json:"grok_local_usage_monthly,omitempty"`
  	// ThirtyDay is the official monthly billing window (used/monthlyLimit %).
  	ThirtyDay   *UsageProgress      `json:"thirty_day,omitempty"`
@@ -889,7 +889,7 @@ index 746cb32..27765f5 100644
  	GrokBilling *xai.BillingSummary `json:"grok_billing,omitempty"`
  
  	// Antigravity 账号级信息
-@@ -300,6 +306,8 @@ type AccountUsageService struct {
+@@ -319,6 +325,8 @@ type AccountUsageService struct {
  	openAIQuotaService      *OpenAIQuotaService
  	cache                   *UsageCache
  	identityCache           IdentityCache
@@ -898,10 +898,10 @@ index 746cb32..27765f5 100644
  	tlsFPProfileService     *TLSFingerprintProfileService
  	agentIdentityTaskMu     sync.Mutex
  	agentIdentityWS         agentIdentityWSConnectionInvalidator
-@@ -346,6 +354,40 @@ func batchUsageErrorMessage(err error) string {
- }
- 
- func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *Account, forceProbe bool) (*UsageInfo, error) {
+@@ -368,6 +376,40 @@ func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *A
+ 	if err := scopedAccountAccess(ctx, s.accountRepo, account, "accounts.usage.read", true); err != nil {
+ 		return nil, err
+ 	}
 +	if script := AccountQuotaScript(account); script != "" {
 +		usage, err := s.ExecuteQuotaScript(ctx, account, script)
 +		if err != nil {
@@ -954,7 +954,7 @@ index 3ebab25..5f88a5e 100644
  
  	// 绑定分组
  	groupIDs := input.GroupIDs
-@@ -603,6 +607,10 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
+@@ -605,6 +609,10 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
  		if err := ValidateUpstreamRequestIDHeaderExtra(normalizedExtra); err != nil {
  			return nil, err
  		}
@@ -969,7 +969,7 @@ diff --git a/backend/internal/service/wire.go b/backend/internal/service/wire.go
 index 688d729..2c3db48 100644
 --- a/backend/internal/service/wire.go
 +++ b/backend/internal/service/wire.go
-@@ -234,6 +234,8 @@ func ProvideAccountUsageService(
+@@ -238,6 +238,8 @@ func ProvideAccountUsageService(
  	identityCache IdentityCache,
  	tlsFPProfileService *TLSFingerprintProfileService,
  	openAIGatewayService *OpenAIGatewayService,
@@ -978,7 +978,7 @@ index 688d729..2c3db48 100644
  ) *AccountUsageService {
  	service := NewAccountUsageService(
  		accountRepo,
-@@ -249,6 +251,8 @@ func ProvideAccountUsageService(
+@@ -253,6 +255,8 @@ func ProvideAccountUsageService(
  		tlsFPProfileService,
  	)
  	service.agentIdentityWS = openAIGatewayService
@@ -991,7 +991,7 @@ diff --git a/frontend/src/api/admin/accounts.ts b/frontend/src/api/admin/account
 index e504775..d3a3caa 100644
 --- a/frontend/src/api/admin/accounts.ts
 +++ b/frontend/src/api/admin/accounts.ts
-@@ -641,6 +641,20 @@ export async function syncUpstreamModels(id: number): Promise<SyncUpstreamModels
+@@ -644,6 +644,20 @@ export async function syncUpstreamModels(id: number): Promise<SyncUpstreamModels
    return data
  }
  
@@ -1012,7 +1012,7 @@ index e504775..d3a3caa 100644
  export interface SyncUpstreamPreviewParams {
    platform: string
    type: string
-@@ -1162,6 +1176,7 @@ export const accountsAPI = {
+@@ -1165,6 +1179,7 @@ export const accountsAPI = {
    getAvailableModels,
    syncUpstreamModels,
    syncUpstreamModelsPreview,
@@ -1024,7 +1024,7 @@ diff --git a/frontend/src/components/account/AccountUsageCell.vue b/frontend/src
 index a12527b..8ba35ec 100644
 --- a/frontend/src/components/account/AccountUsageCell.vue
 +++ b/frontend/src/components/account/AccountUsageCell.vue
-@@ -618,18 +618,18 @@
+@@ -635,18 +635,18 @@
    <!-- Non-OAuth/Setup-Token accounts -->
    <div ref="rootRef" v-else>
      <!-- Gemini API Key accounts: show quota info -->
@@ -1046,7 +1046,7 @@ index a12527b..8ba35ec 100644
          :account="account"
          @updated="handleOpenCodeGoUsageUpdated"
        />
-@@ -689,9 +689,16 @@
+@@ -706,9 +706,16 @@
          color="purple"
        />
  
@@ -1064,7 +1064,7 @@ index a12527b..8ba35ec 100644
          class="text-xs text-gray-400"
        >-</div>
      </div>
-@@ -703,12 +710,14 @@ import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'v
+@@ -720,12 +727,14 @@ import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'v
  import { useI18n } from 'vue-i18n'
  import { adminAPI } from '@/api/admin'
  import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
@@ -1080,7 +1080,7 @@ index a12527b..8ba35ec 100644
  import AccountQuotaInfo from './AccountQuotaInfo.vue'
  import ClaudeResetCreditsCell from './ClaudeResetCreditsCell.vue'
  import OpenAIQuotaResetCell from './OpenAIQuotaResetCell.vue'
-@@ -724,7 +733,7 @@ import {
+@@ -741,7 +750,7 @@ import {
  import OpenCodeGoUsageCell from './OpenCodeGoUsageCell.vue'
  
  // Module-level cache shared across all AccountUsageCell instances
@@ -1089,7 +1089,7 @@ index a12527b..8ba35ec 100644
  const USAGE_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
  
  const props = withDefaults(
-@@ -764,6 +773,14 @@ const loading = ref(false)
+@@ -781,6 +790,14 @@ const loading = ref(false)
  const activeQueryLoading = ref(false)
  const error = ref<string | null>(null)
  const usageInfo = ref<AccountUsageInfo | null>(null)
@@ -1104,7 +1104,7 @@ index a12527b..8ba35ec 100644
  watch(usageInfo, (usage) => {
    if (usage) emit('usage-loaded', usage)
  })
-@@ -792,6 +809,7 @@ const isGeminiVertex = computed(() => {
+@@ -809,6 +826,7 @@ const isGeminiVertex = computed(() => {
  
  // Show usage windows for OAuth and Setup Token accounts
  const showUsageWindows = computed(() => {
@@ -1112,7 +1112,7 @@ index a12527b..8ba35ec 100644
    // Gemini: we can always compute local usage windows from DB logs (simulated quotas).
    // 第三方上游 API Key 没有模拟配额，按普通 Key 账号展示今日统计与额度进度条。
    if (props.account.platform === 'gemini') return !isGeminiThirdPartyApiKey.value
-@@ -804,6 +822,8 @@ const showUsageWindows = computed(() => {
+@@ -821,6 +839,8 @@ const showUsageWindows = computed(() => {
  })
  
  const shouldFetchUsage = computed(() => {
@@ -1121,7 +1121,7 @@ index a12527b..8ba35ec 100644
    if (props.account.platform === 'anthropic') {
      return props.account.type === 'oauth' || props.account.type === 'setup-token'
    }
-@@ -1458,10 +1478,13 @@ const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?
+@@ -1511,10 +1531,13 @@ const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?
      return
    }
  
@@ -1136,7 +1136,7 @@ index a12527b..8ba35ec 100644
        usageInfo.value = cached.data
        loading.value = false
        return
-@@ -1473,20 +1496,20 @@ const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?
+@@ -1526,20 +1549,20 @@ const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?
  
    try {
  		const fetchFn = () => options?.source
@@ -1163,7 +1163,7 @@ index a12527b..8ba35ec 100644
    }
  }
  
-@@ -1726,6 +1749,16 @@ watch(openAIUsageRefreshKey, (nextKey, prevKey) => {
+@@ -1779,6 +1802,16 @@ watch(openAIUsageRefreshKey, (nextKey, prevKey) => {
    requestAutoLoad()
  })
  
@@ -1198,15 +1198,15 @@ index cb013a4..b1a80d8 100644
        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
          <div>
            <label class="input-label">{{ t('admin.accounts.concurrency') }}</label>
-@@ -4154,6 +4161,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
- import Select from '@/components/common/Select.vue'
- import HelpTooltip from '@/components/common/HelpTooltip.vue'
- import UpstreamRequestIdHeaderField from '@/components/account/UpstreamRequestIdHeaderField.vue'
+@@ -4168,6 +4175,7 @@ import {
+   applyOpenAIImageSizeTiersToExtra,
+   type OpenAIImageSizeTier
+ } from '@/components/account/openaiImageSizeTiers'
 +import QuotaScriptEditor from '@/components/account/QuotaScriptEditor.vue'
  import PlatformIcon from '@/components/common/PlatformIcon.vue'
  import Icon from '@/components/icons/Icon.vue'
  import ProxySelector from '@/components/common/ProxySelector.vue'
-@@ -4247,6 +4255,7 @@ const oauthStepTitle = computed(() => {
+@@ -4261,6 +4269,7 @@ const oauthStepTitle = computed(() => {
  // Platform-specific hints for API Key type
  // 上游ID：直接上游声明请求标识的响应头名，留空不记录。
  const upstreamRequestIdHeader = ref('')
@@ -1214,7 +1214,7 @@ index cb013a4..b1a80d8 100644
  const withUpstreamRequestIdHeader = <T extends Record<string, unknown> | undefined>(extra: T): T | Record<string, unknown> => {
    const name = upstreamRequestIdHeader.value.trim()
    if (!name) return extra
-@@ -5632,6 +5641,7 @@ const resetForm = () => {
+@@ -5648,6 +5657,7 @@ const resetForm = () => {
    apiKeyBaseUrl.value = 'https://api.anthropic.com'
    apiKeyValue.value = ''
    upstreamRequestIdHeader.value = ''
@@ -1222,7 +1222,7 @@ index cb013a4..b1a80d8 100644
    upstreamBillingAutoProbeEnabled.value = true
    editQuotaLimit.value = null
    editQuotaDailyLimit.value = null
-@@ -5848,7 +5858,25 @@ const buildAnthropicExtra = (base?: Record<string, unknown>): Record<string, unk
+@@ -5866,7 +5876,25 @@ const buildAnthropicExtra = (base?: Record<string, unknown>): Record<string, unk
  }
  
  // Helper function to create account with mixed channel warning handling
@@ -1252,7 +1252,7 @@ diff --git a/frontend/src/components/account/EditAccountModal.vue b/frontend/src
 index 288abd7..77b5cf7 100644
 --- a/frontend/src/components/account/EditAccountModal.vue
 +++ b/frontend/src/components/account/EditAccountModal.vue
-@@ -1780,6 +1780,13 @@
+@@ -1932,6 +1932,13 @@
          :type="account.type"
        />
  
@@ -1266,15 +1266,15 @@ index 288abd7..77b5cf7 100644
        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
          <div>
            <label class="input-label">{{ t('admin.accounts.concurrency') }}</label>
-@@ -3254,6 +3261,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
- import Select from '@/components/common/Select.vue'
- import HelpTooltip from '@/components/common/HelpTooltip.vue'
- import UpstreamRequestIdHeaderField from '@/components/account/UpstreamRequestIdHeaderField.vue'
+@@ -3422,6 +3429,7 @@ import {
+   readOpenAIImageSizeTiers,
+   type OpenAIImageSizeTier
+ } from '@/components/account/openaiImageSizeTiers'
 +import QuotaScriptEditor from '@/components/account/QuotaScriptEditor.vue'
  import Toggle from '@/components/common/Toggle.vue'
  import Icon from '@/components/icons/Icon.vue'
  import ProxySelector from '@/components/common/ProxySelector.vue'
-@@ -3785,6 +3793,9 @@ const upstreamBillingRateSyncEnabled = ref(false)
+@@ -4100,6 +4108,9 @@ const upstreamBillingRateSyncEnabled = ref(false)
  const mixedScheduling = ref(false) // For antigravity accounts: enable mixed scheduling
  // 上游ID：直接上游声明请求标识的响应头名，留空不记录。
  const upstreamRequestIdHeader = ref('')
@@ -1284,15 +1284,15 @@ index 288abd7..77b5cf7 100644
  const readUpstreamRequestIdHeader = (extra: unknown): string => {
    const value = (extra as Record<string, unknown> | undefined)?.upstream_request_id_header
    return typeof value === 'string' ? value : ''
-@@ -4329,6 +4340,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
+@@ -4645,6 +4656,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
  	mixedScheduling.value = extra?.mixed_scheduling === true
  	allowOverages.value = extra?.allow_overages === true
  	upstreamRequestIdHeader.value = readUpstreamRequestIdHeader(extra)
 +  quotaScript.value = readQuotaScript(extra)
  	openAIImagesUrlToB64JsonEnabled.value = extra?.images_url_to_b64_json === true
+ 	openAIImageSizeTiers.value = readOpenAIImageSizeTiers(extra)
  	autoPause5hThreshold.value = typeof extra?.auto_pause_5h_threshold === 'number' ? extra.auto_pause_5h_threshold * 100 : null
- 	autoPause7dThreshold.value = typeof extra?.auto_pause_7d_threshold === 'number' ? extra.auto_pause_7d_threshold * 100 : null
-@@ -6090,6 +6102,13 @@ const handleSubmit = async () => {
+@@ -6408,6 +6420,13 @@ const handleSubmit = async () => {
        updatePayload.extra = newExtra
      }
  
@@ -1306,7 +1306,7 @@ index 288abd7..77b5cf7 100644
      const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
        await submitUpdateAccount(accountID, updatePayload)
      })
-@@ -6122,4 +6141,14 @@ const handleMixedChannelConfirm = async () => {
+@@ -6440,4 +6459,14 @@ const handleMixedChannelConfirm = async () => {
  const handleMixedChannelCancel = () => {
    clearMixedChannelDialog()
  }
@@ -1524,7 +1524,7 @@ index e1fa589..7268765 100644
        autoRefresh: 'Auto Refresh',
        enableAutoRefresh: 'Enable auto refresh',
        refreshInterval5s: '5 seconds',
-@@ -1649,6 +1654,7 @@ export default {
+@@ -1711,6 +1716,7 @@ export default {
          noData: 'No usage data available for this account'
        },
        usageWindow: {
@@ -1560,7 +1560,7 @@ diff --git a/frontend/src/types/index.ts b/frontend/src/types/index.ts
 index 1eac972..33fe347 100644
 --- a/frontend/src/types/index.ts
 +++ b/frontend/src/types/index.ts
-@@ -1460,6 +1460,10 @@ export interface AccountUsageInfo {
+@@ -1511,6 +1511,10 @@ export interface AccountUsageInfo {
    seven_day_sonnet: UsageProgress | null
    seven_day_fable?: UsageProgress | null
    thirty_day?: UsageProgress | null

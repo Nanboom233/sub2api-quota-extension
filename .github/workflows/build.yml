@@ -8,7 +8,7 @@ on:
       upstream_tag:
         description: Upstream Sub2API version tag
         required: true
-        default: v0.2.19
+        default: v0.2.20
         type: string
       linux_amd64:
         description: Build Linux x86_64

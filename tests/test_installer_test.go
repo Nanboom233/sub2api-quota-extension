@@ -658,7 +658,7 @@ func TestVersionWarningDecision(t *testing.T) {
 			if accept {
 				input = "1\nyes\n"
 			}
-			f := newFixture(t, fakeState{Installed: "0.2.17", Candidate: "0.2.19", Image: "sub2api:0.2.18"}, input)
+			f := newFixture(t, fakeState{Installed: "0.2.17", Candidate: "0.2.20", Image: "sub2api:0.2.18"}, input)
 			err := f.i.install(f.ctx, f.source)
 			if (err == nil) != accept {
 				t.Fatal(err, f.out.String(), f.errOut.String())
