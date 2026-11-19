@@ -171,3 +171,129 @@ func TestQuotaScriptStorageAndDispatch(t *testing.T) {
 	account.Extra[QuotaScriptExtraKey] = strings.Repeat(" ", 2)
 	require.Empty(t, AccountQuotaScript(account))
 }
+
+func TestQuotaScriptSchedulingIntegration(t *testing.T) {
+	account := &Account{
+		ID: 1, Type: AccountTypeAPIKey, Platform: PlatformOpenAI,
+		Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{"api_key": "fixture"},
+		Extra:       map[string]any{},
+	}
+	repo := &quotaAccountRepoFixture{upstreamBillingProbeAccountRepo: &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{1: account}}}
+	svc := &AccountUsageService{accountRepo: repo}
+
+	// 1. Draft ExecuteQuotaScript must not mutate account scheduling state.
+	draftUsage, err := svc.ExecuteQuotaScript(context.Background(), account, `function queryQuota(){return {balance: 0, day: {used: 10, limit: 10}}}`)
+	require.NoError(t, err)
+	require.Zero(t, *draftUsage.Balance)
+	require.True(t, account.IsSchedulable())
+	require.Empty(t, repo.updates[1])
+
+	// 2. GetUsage with exhausted balance or undated window pauses scheduling.
+	account.Extra[QuotaScriptExtraKey] = `function queryQuota(){return {balance: 0, day: {used: 10, limit: 10}}}`
+	usage, err := svc.GetUsage(context.Background(), 1)
+	require.NoError(t, err)
+	require.Zero(t, *usage.Balance)
+	require.True(t, repo.accounts[1].IsQuotaExceeded())
+	require.False(t, repo.accounts[1].IsSchedulable())
+
+	// 3. Subsequent recovered script result restores schedulability.
+	account.Extra[QuotaScriptExtraKey] = `function queryQuota(){return {balance: 15, day: {used: 2, limit: 10}}}`
+	usage, err = svc.GetUsage(context.Background(), 1)
+	require.NoError(t, err)
+	require.Equal(t, 15.0, *usage.Balance)
+	require.False(t, repo.accounts[1].IsQuotaExceeded())
+	require.True(t, repo.accounts[1].IsSchedulable())
+
+	// 4. Dated session window exhaustion sets TempUnschedulableUntil and clears on recovery.
+	futureReset := time.Now().UTC().Add(3 * time.Hour).Truncate(time.Second)
+	account.Extra[QuotaScriptExtraKey] = `function queryQuota(){return {session: {used: 10, limit: 10, reset_at: '` + futureReset.Format(time.RFC3339) + `'}}}`
+	_, err = svc.GetUsage(context.Background(), 1)
+	require.NoError(t, err)
+	require.False(t, repo.accounts[1].IsSchedulable())
+	require.NotNil(t, repo.accounts[1].TempUnschedulableUntil)
+	require.True(t, futureReset.Equal(*repo.accounts[1].TempUnschedulableUntil))
+
+	account.Extra[QuotaScriptExtraKey] = `function queryQuota(){return {session: {used: 9, limit: 10, reset_at: '` + futureReset.Format(time.RFC3339) + `'}}}`
+	_, err = svc.GetUsage(context.Background(), 1)
+	require.NoError(t, err)
+	require.Nil(t, repo.accounts[1].TempUnschedulableUntil)
+	require.True(t, repo.accounts[1].IsSchedulable())
+
+	decision := EvaluateAccountSchedulingThreshold(repo.accounts[1], map[string]int{PlatformOpenAI: 85}, time.Now().UTC())
+	require.True(t, decision.ShouldPause)
+	require.Equal(t, "5h", decision.Window)
+	require.InDelta(t, 90.0, decision.UsedPercent, 1e-6)
+}
+
+func TestQuotaScriptInFlightCASRejection(t *testing.T) {
+	futureReset := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
+	var onScriptHTTP atomic.Value
+	onScriptHTTP.Store(func() {})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		onScriptHTTP.Load().(func())()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"used":10,"limit":10}`)
+	}))
+	defer server.Close()
+
+	exhaustedScript := `function queryQuota(ctx) {
+  const res = http.request({url: ctx.baseUrl + '/quota'});
+  const data = JSON.parse(res.body);
+  return {balance: 0, session: {used: data.used, limit: data.limit, reset_at: '` + futureReset.Format(time.RFC3339) + `'}};
+}`
+	repo := &quotaAccountRepoFixture{
+		upstreamBillingProbeAccountRepo: &upstreamBillingProbeAccountRepo{
+			accounts: map[int64]*Account{
+				1: {
+					ID: 1, Type: AccountTypeAPIKey, Platform: PlatformOpenAI,
+					Status: StatusActive, Schedulable: true,
+					Credentials: map[string]any{"api_key": "script-key-1", "base_url": server.URL},
+					Extra:       map[string]any{QuotaScriptExtraKey: exhaustedScript},
+				},
+			},
+		},
+	}
+	svc := &AccountUsageService{
+		accountRepo:    repo,
+		upstreamHTTP:   &quotaHTTPFixture{client: server.Client()},
+		upstreamConfig: &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{AllowInsecureHTTP: true}}},
+	}
+
+	// 1. In-flight quota_script edit while old script HTTP request is running must reject stale scheduling write.
+	loaded, err := repo.GetByID(context.Background(), 1)
+	require.NoError(t, err)
+	onScriptHTTP.Store(func() {
+		repo.mu.Lock()
+		defer repo.mu.Unlock()
+		repo.accounts[1].Extra[QuotaScriptExtraKey] = `function queryQuota(){return {balance: 100}}`
+	})
+	usage, err := svc.GetUsageForAccount(context.Background(), loaded)
+	require.NoError(t, err)
+	require.Zero(t, *usage.Balance)
+	require.True(t, repo.accounts[1].IsSchedulable())
+	require.Nil(t, repo.accounts[1].TempUnschedulableUntil)
+	for _, key := range APIKeyQuotaSchedulingExtraKeys {
+		require.NotContains(t, repo.accounts[1].Extra, key)
+		require.NotContains(t, loaded.Extra, key)
+	}
+	require.Nil(t, loaded.TempUnschedulableUntil)
+
+	// 2. In-flight api_key rotation during GetUsageBatch script execution must also reject stale scheduling write.
+	repo.accounts[1].Extra[QuotaScriptExtraKey] = exhaustedScript
+	onScriptHTTP.Store(func() {
+		repo.mu.Lock()
+		defer repo.mu.Unlock()
+		repo.accounts[1].Credentials["api_key"] = "script-key-2"
+	})
+	batch, failures, err := svc.GetUsageBatch(context.Background(), []int64{1}, false)
+	require.NoError(t, err)
+	require.Empty(t, failures)
+	require.Zero(t, *batch[1].Balance)
+	require.True(t, repo.accounts[1].IsSchedulable())
+	require.Nil(t, repo.accounts[1].TempUnschedulableUntil)
+	for _, key := range APIKeyQuotaSchedulingExtraKeys {
+		require.NotContains(t, repo.accounts[1].Extra, key)
+	}
+}
