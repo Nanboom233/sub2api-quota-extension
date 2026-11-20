@@ -160,4 +160,113 @@ describe('API-key account usage extension', () => {
       wrapper.unmount()
     }
   })
+
+  it.each([
+    ['anthropic', 'oauth'], ['anthropic', 'setup-token'], ['gemini', 'oauth'],
+  ])('keeps %s %s snapshot refresh passive and ignores unrelated metadata', async (platform, type) => {
+    getUsage.mockResolvedValue(usage({ five_hour: progress(21), seven_day: progress(31) }))
+    const fixture = { ...account(98100 + (platform === 'gemini' ? 2 : type === 'oauth' ? 0 : 1)),
+      platform, type, extra: {}, credentials: {} } as Account
+    const wrapper = mount(AccountUsageCell, { props: { account: fixture },
+      global: { stubs: { ClaudeResetCreditsCell: true, AccountQuotaInfo: true } } })
+    try {
+      await flushPromises()
+      const changed = { ...fixture, last_used_at: '2026-11-21T01:00:00Z',
+        extra: { passive_usage_sampled_at: '2026-11-21T01:00:00Z', session_window_utilization: 0.4 } }
+      await wrapper.setProps({ account: changed })
+      await flushPromises()
+      expect(getUsage).toHaveBeenCalledTimes(2)
+      expect(getUsage).toHaveBeenLastCalledWith(...(platform === 'anthropic'
+        ? [fixture.id, 'passive', false] : [fixture.id]))
+      await wrapper.setProps({ account: { ...changed, updated_at: 'unrelated',
+        extra: { ...changed.extra, unrelated: true } } })
+      await flushPromises()
+      expect(getUsage).toHaveBeenCalledTimes(2)
+    } finally { wrapper.unmount() }
+  })
+
+  it('keeps unchanged configuration and refreshes after a connection edit', async () => {
+    const fixture = { ...account(98103), credentials: { base_url: 'https://quota.example/v1',
+      header_overrides: { B: '2', A: '1' } } }
+    getUsage.mockResolvedValueOnce(usage({ balance: 11 })).mockResolvedValueOnce(usage({ balance: 12 }))
+    const wrapper = mount(AccountUsageCell, { props: { account: fixture } })
+    try {
+      await flushPromises()
+      await wrapper.setProps({ account: { ...fixture,
+        credentials: { ...fixture.credentials, header_overrides: { A: '1', B: '2' } } } })
+      await flushPromises()
+      expect(getUsage).toHaveBeenCalledTimes(1)
+      expect(wrapper.text()).toContain('USD 11.00')
+      await wrapper.setProps({ account: { ...fixture, proxy_id: 9 } })
+      await flushPromises()
+      expect(getUsage).toHaveBeenCalledTimes(2)
+      expect(wrapper.text()).toContain('USD 12.00')
+    } finally { wrapper.unmount() }
+  })
+
+  it('rejects an obsolete failure and clears state when a script row stops qualifying', async () => {
+    let failOld!: (reason: Error) => void
+    getUsage.mockReturnValueOnce(new Promise((_, reject) => { failOld = reject }))
+      .mockResolvedValueOnce(usage({ balance: 17 }))
+    const fixture = { ...account(98104, ''), extra: { quota_script: 'old script' } }
+    const wrapper = mount(AccountUsageCell, { props: { account: fixture } })
+    try {
+      await flushPromises()
+      await wrapper.setProps({ account: { ...fixture, extra: { quota_script: 'saved script' } } })
+      await flushPromises()
+      failOld(new Error('obsolete failure'))
+      await flushPromises()
+      expect(wrapper.text()).toContain('USD 17.00')
+      expect(wrapper.text()).not.toContain('common.error')
+      await wrapper.setProps({ account: { ...fixture, extra: {} } })
+      await flushPromises()
+      expect(getUsage).toHaveBeenCalledTimes(2)
+      expect(wrapper.text()).not.toContain('USD 17.00')
+    } finally { wrapper.unmount() }
+  })
+
+  it('refreshes saved API-key configuration immediately outside the mobile viewport', async () => {
+    const media = vi.spyOn(window, 'matchMedia').mockImplementation(query => ({
+      matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }) as unknown as MediaQueryList)
+    getUsage.mockResolvedValue(usage({ balance: 23 }))
+    const fixture = account(98105)
+    const wrapper = mount(AccountUsageCell, { props: { account: fixture } })
+    try {
+      await flushPromises()
+      expect(getUsage).not.toHaveBeenCalled()
+      await wrapper.setProps({ account: { ...fixture, updated_at: 'saved' } })
+      await flushPromises()
+      expect(getUsage).toHaveBeenCalledTimes(1)
+      expect(wrapper.text()).toContain('USD 23.00')
+    } finally {
+      wrapper.unmount()
+      media.mockRestore()
+    }
+  })
+
+  it.each(['success', 'failure'])('rejects an active-query %s after the native snapshot changes', async outcome => {
+    let finishOld!: (value: AccountUsageInfo) => void
+    let failOld!: (reason: Error) => void
+    getUsage.mockResolvedValueOnce(usage({ five_hour: progress(10) }))
+      .mockReturnValueOnce(new Promise((resolve, reject) => { finishOld = resolve; failOld = reject }))
+      .mockResolvedValueOnce(usage({ five_hour: progress(80) }))
+    const fixture = { ...account(98106), platform: 'anthropic', type: 'oauth', credentials: {} } as Account
+    const wrapper = mount(AccountUsageCell, { props: { account: fixture }, global: { stubs: {
+      ClaudeResetCreditsCell: { template: '<div><slot name="pre-actions" /></div>' },
+    } } })
+    try {
+      await flushPromises()
+      await wrapper.get('button').trigger('click')
+      expect(getUsage).toHaveBeenLastCalledWith(fixture.id, 'active', true)
+      await wrapper.setProps({ account: { ...fixture, last_used_at: 'new passive snapshot' } })
+      await flushPromises()
+      if (outcome === 'success') finishOld(usage({ five_hour: progress(1) }))
+      else failOld(new Error('obsolete active query'))
+      await flushPromises()
+      expect(wrapper.getComponent(UsageProgressBar).props('utilization')).toBe(80)
+      expect(wrapper.text()).not.toContain('common.error')
+      expect(wrapper.attributes('aria-busy')).toBe('false')
+    } finally { wrapper.unmount() }
+  })
 })

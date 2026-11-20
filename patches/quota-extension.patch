@@ -2210,10 +2210,10 @@ index 44d0ab9..164b6ae 100644
    exchangeCode,
    refreshOpenAIToken,
 diff --git a/frontend/src/components/account/AccountUsageCell.vue b/frontend/src/components/account/AccountUsageCell.vue
-index ff73bde..9121abf 100644
+index 8a5a8bd..1def26b 100644
 --- a/frontend/src/components/account/AccountUsageCell.vue
 +++ b/frontend/src/components/account/AccountUsageCell.vue
-@@ -684,18 +684,18 @@
+@@ -687,18 +687,18 @@
    <!-- Non-OAuth/Setup-Token accounts -->
    <div ref="rootRef" v-else>
      <!-- Gemini API Key accounts: show quota info -->
@@ -2235,7 +2235,7 @@ index ff73bde..9121abf 100644
          :account="account"
          @updated="handleOpenCodeGoUsageUpdated"
        />
-@@ -755,9 +755,16 @@
+@@ -758,9 +758,16 @@
          color="purple"
        />
  
@@ -2253,12 +2253,12 @@ index ff73bde..9121abf 100644
          class="text-xs text-gray-400"
        >-</div>
      </div>
-@@ -769,12 +776,14 @@ import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'v
+@@ -772,12 +779,14 @@ import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'v
  import { useI18n } from 'vue-i18n'
  import { adminAPI } from '@/api/admin'
  import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
--import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
-+import { buildAPIKeyUsageRefreshKey, buildOpenAIUsageRefreshKey, hasQuotaScript } from '@/utils/accountUsageRefresh'
+-import { buildAccountUsageRefreshKey } from '@/utils/accountUsageRefresh'
++import { buildAccountUsageRefreshKey, hasQuotaScript } from '@/utils/accountUsageRefresh'
  import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
  import { formatCompactNumber, formatDateTime } from '@/utils/format'
  import { isOfficialGeminiBaseUrl } from '@/utils/geminiExplicitCache'
@@ -2269,21 +2269,11 @@ index ff73bde..9121abf 100644
  import AccountQuotaInfo from './AccountQuotaInfo.vue'
  import ClaudeResetCreditsCell from './ClaudeResetCreditsCell.vue'
  import OpenAIQuotaResetCell from './OpenAIQuotaResetCell.vue'
-@@ -790,7 +799,7 @@ import {
- import OpenCodeGoUsageCell from './OpenCodeGoUsageCell.vue'
- 
- // Module-level cache shared across all AccountUsageCell instances
--const _usageCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
-+const _usageCache = new Map<number, { data: AccountUsageInfo; ts: number; config: string }>()
- const USAGE_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
- 
- const props = withDefaults(
-@@ -830,6 +839,14 @@ const loading = ref(false)
+@@ -833,6 +842,13 @@ const loading = ref(false)
  const activeQueryLoading = ref(false)
  const error = ref<string | null>(null)
  const usageInfo = ref<AccountUsageInfo | null>(null)
 +const usesQuotaScript = computed(() => hasQuotaScript(props.account))
-+const apiKeyUsageRefreshKey = computed(() => buildAPIKeyUsageRefreshKey(props.account))
 +let usageRequest = 0
 +const hasUpstreamUsage = computed(() => props.account.type === 'apikey' && (
 +  [usageInfo.value?.five_hour, usageInfo.value?.one_day, usageInfo.value?.seven_day,
@@ -2293,7 +2283,7 @@ index ff73bde..9121abf 100644
  watch(usageInfo, (usage) => {
    if (usage) emit('usage-loaded', usage)
  })
-@@ -858,6 +875,7 @@ const isGeminiVertex = computed(() => {
+@@ -861,6 +877,7 @@ const isGeminiVertex = computed(() => {
  
  // Show usage windows for OAuth and Setup Token accounts
  const showUsageWindows = computed(() => {
@@ -2301,7 +2291,7 @@ index ff73bde..9121abf 100644
    // Gemini: we can always compute local usage windows from DB logs (simulated quotas).
    // 第三方上游 API Key 没有模拟配额，按普通 Key 账号展示今日统计与额度进度条。
    if (props.account.platform === 'gemini') return !isGeminiThirdPartyApiKey.value
-@@ -870,6 +888,8 @@ const showUsageWindows = computed(() => {
+@@ -873,6 +890,8 @@ const showUsageWindows = computed(() => {
  })
  
  const shouldFetchUsage = computed(() => {
@@ -2310,22 +2300,16 @@ index ff73bde..9121abf 100644
    if (props.account.platform === 'anthropic') {
      return props.account.type === 'oauth' || props.account.type === 'setup-token'
    }
-@@ -1566,10 +1586,13 @@ const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?
+@@ -1572,6 +1591,8 @@ const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?
      return
    }
  
 +  const accountID = props.account.id
-+  const config = apiKeyUsageRefreshKey.value
 +  const currentRequest = ++usageRequest
    // Check cache
    if (!options?.bypassCache) {
      const cached = _usageCache.get(props.account.id)
--    if (cached && Date.now() - cached.ts < USAGE_CACHE_TTL) {
-+    if (cached && cached.config === config && Date.now() - cached.ts < USAGE_CACHE_TTL) {
-       usageInfo.value = cached.data
-       loading.value = false
-       return
-@@ -1581,20 +1604,20 @@ const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?
+@@ -1588,20 +1609,20 @@ const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?
  
    try {
  		const fetchFn = () => options?.source
@@ -2335,53 +2319,56 @@ index ff73bde..9121abf 100644
 +			: adminAPI.accounts.getUsage(accountID)
      const result = await enqueueUsageRequest(props.account, fetchFn)
 -    if (!unmounted.value) {
-+    if (!unmounted.value && currentRequest === usageRequest && accountID === props.account.id && config === apiKeyUsageRefreshKey.value) {
++    if (!unmounted.value && currentRequest === usageRequest && accountID === props.account.id && refreshKey === usageRefreshKey.value) {
        usageInfo.value = result
--      _usageCache.set(props.account.id, { data: result, ts: Date.now() })
-+      _usageCache.set(accountID, { data: result, ts: Date.now(), config })
+-      _usageCache.set(props.account.id, { data: result, ts: Date.now(), refreshKey })
++      _usageCache.set(accountID, { data: result, ts: Date.now(), refreshKey })
      }
    } catch (e: any) {
 -    if (!unmounted.value) {
-+    if (!unmounted.value && currentRequest === usageRequest) {
++    if (!unmounted.value && currentRequest === usageRequest && accountID === props.account.id && refreshKey === usageRefreshKey.value) {
        error.value = t('common.error')
        console.error('Failed to load usage:', e)
      }
    } finally {
 -    if (!unmounted.value) loading.value = false
-+    if (!unmounted.value && currentRequest === usageRequest) loading.value = false
++    if (!unmounted.value && currentRequest === usageRequest && accountID === props.account.id && refreshKey === usageRefreshKey.value) loading.value = false
    }
  }
  
-@@ -1651,4 +1674,5 @@ const attachVisibilityObserver = () => {
- const loadActiveUsage = async () => {
-   const accountID = props.account.id
-+  const config = apiKeyUsageRefreshKey.value
-   activeQueryLoading.value = true
+@@ -1662,12 +1683,12 @@ const loadActiveUsage = async () => {
    error.value = null
-@@ -1657,5 +1681,5 @@ const loadActiveUsage = async () => {
-     if (!unmounted.value && props.account.id === accountID) {
+   try {
+     const result = await adminAPI.accounts.getUsage(accountID, 'active', true)
+-    if (!unmounted.value && props.account.id === accountID) {
++    if (!unmounted.value && props.account.id === accountID && refreshKey === usageRefreshKey.value) {
        usageInfo.value = result
--      _usageCache.set(accountID, { data: result, ts: Date.now() })
-+      _usageCache.set(accountID, { data: result, ts: Date.now(), config })
+       _usageCache.set(accountID, { data: result, ts: Date.now(), refreshKey })
      }
    } catch (e: any) {
-@@ -1843,6 +1867,16 @@ watch(openAIUsageRefreshKey, (nextKey, prevKey) => {
-   requestAutoLoad()
- })
+-    if (!unmounted.value && props.account.id === accountID) {
++    if (!unmounted.value && props.account.id === accountID && refreshKey === usageRefreshKey.value) {
+       error.value = t('common.error')
+       console.error('Failed to load active usage:', e)
+     }
+@@ -1840,6 +1861,17 @@ watch(
  
-+watch(apiKeyUsageRefreshKey, (next, previous) => {
-+  if (next === previous) return
-+  usageRequest++
-+  _usageCache.delete(props.account.id)
-+  usageInfo.value = null
-+  error.value = null
-+  if (isBatchManaged.value) requestParentBatchUsage({ force: true })
-+  else requestAutoLoad()
-+})
-+
- watch(
-   () => props.manualRefreshToken,
-   (nextToken, prevToken) => {
+ watch(usageRefreshKey, (nextKey, prevKey) => {
+   if (!prevKey || nextKey === prevKey) return
++  if (props.account.type === 'apikey') {
++    usageRequest++
++    _usageCache.delete(props.account.id)
++    usageInfo.value = null
++    error.value = null
++    loading.value = false
++    if (!shouldFetchUsage.value) return
++    if (isBatchManaged.value) requestParentBatchUsage({ force: true })
++    else void loadUsage({ bypassCache: true })
++    return
++  }
+   if (!shouldFetchUsage.value) return
+
+   if (isBatchManaged.value) {
 diff --git a/frontend/src/components/account/CreateAccountModal.vue b/frontend/src/components/account/CreateAccountModal.vue
 index 34906ac..0a8cc98 100644
 --- a/frontend/src/components/account/CreateAccountModal.vue
@@ -2774,43 +2761,50 @@ index 21ffc93..2135288 100644
    gemini_pro_daily?: UsageProgress | null
    gemini_flash_daily?: UsageProgress | null
 diff --git a/frontend/src/utils/accountUsageRefresh.ts b/frontend/src/utils/accountUsageRefresh.ts
-index 121dae2..1343a93 100644
+index 4d64ee7..77d6058 100644
 --- a/frontend/src/utils/accountUsageRefresh.ts
 +++ b/frontend/src/utils/accountUsageRefresh.ts
-@@ -29,6 +29,31 @@ const isNonBlankString = (value: unknown): value is string => (
+@@ -29,6 +29,9 @@ const isNonBlankString = (value: unknown): value is string => (
    typeof value === 'string' && value.trim().length > 0
  )
  
 +export const hasQuotaScript = (account: Pick<Account, 'type' | 'extra'>): boolean =>
 +  account.type === 'apikey' && isNonBlankString(account.extra?.quota_script)
 +
-+export const buildAPIKeyUsageRefreshKey = (account: Account): string => {
-+  if (account.type !== 'apikey') return ''
-+  const credentials = account.credentials ?? {}
-+  const extra = account.extra ?? {}
-+  return serializeSnapshotRefreshValue({
-+    id: account.id,
-+    platform: account.platform,
-+    script: extra.quota_script,
-+    base_url: credentials.base_url,
-+    api_base_urls: credentials.api_base_urls,
-+    api_protocol: credentials.api_protocol,
-+    api_key: credentials.api_key,
-+    header_override_enabled: credentials.header_override_enabled,
-+    header_overrides: credentials.header_overrides,
-+    proxy_id: account.proxy_id,
-+    enable_tls_fingerprint: extra.enable_tls_fingerprint,
-+    tls_fingerprint_profile_id: extra.tls_fingerprint_profile_id,
-+    // Saved keys are redacted. A saved update can change the hidden key.
-+    updated_at: account.updated_at
-+  })
-+}
-+
  export const buildOpenAIUsageRefreshKey = (account: Pick<Account, 'id' | 'platform' | 'type' | 'updated_at' | 'last_used_at' | 'rate_limit_reset_at' | 'extra'>): string => {
    if (account.platform !== 'openai' || account.type !== 'oauth') {
      return ''
+@@ -70,7 +73,27 @@ export const buildGrokUsageRefreshKey = (account: Pick<Account, 'platform' | 'ex
+   ].join('|')
+ }
+
+-export const buildAccountUsageRefreshKey = (account: Pick<Account, 'id' | 'platform' | 'type' | 'updated_at' | 'last_used_at' | 'rate_limit_reset_at' | 'session_window_start' | 'session_window_end' | 'session_window_status' | 'extra'>): string => {
++export const buildAccountUsageRefreshKey = (account: Pick<Account, 'id' | 'platform' | 'type' | 'updated_at' | 'last_used_at' | 'rate_limit_reset_at' | 'session_window_start' | 'session_window_end' | 'session_window_status' | 'extra' | 'credentials' | 'proxy_id'>): string => {
++  if (account.type === 'apikey') {
++    const credentials = account.credentials ?? {}
++    const extra = account.extra ?? {}
++    return serializeSnapshotRefreshValue({
++      id: account.id,
++      platform: account.platform,
++      script: extra.quota_script,
++      base_url: credentials.base_url,
++      api_base_urls: credentials.api_base_urls,
++      api_protocol: credentials.api_protocol,
++      api_key: credentials.api_key,
++      header_override_enabled: credentials.header_override_enabled,
++      header_overrides: credentials.header_overrides,
++      proxy_id: account.proxy_id,
++      enable_tls_fingerprint: extra.enable_tls_fingerprint,
++      tls_fingerprint_profile_id: extra.tls_fingerprint_profile_id,
++      // Saved keys are redacted. A saved update can change the hidden key.
++      updated_at: account.updated_at
++    })
++  }
+   if (account.platform === 'openai') return buildOpenAIUsageRefreshKey(account)
+
+   const isClaude = account.platform === 'anthropic' && (account.type === 'oauth' || account.type === 'setup-token')
 diff --git a/frontend/src/views/admin/AccountsView.vue b/frontend/src/views/admin/AccountsView.vue
-index 7384e48..152df13 100644
+index fc3bea8..aeb2f40 100644
 --- a/frontend/src/views/admin/AccountsView.vue
 +++ b/frontend/src/views/admin/AccountsView.vue
 @@ -521,6 +521,7 @@ import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.
@@ -2825,20 +2819,11 @@ index 7384e48..152df13 100644
  import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
  import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
  import { fetchAllAccountIds } from '@/utils/accountSelection'
--import { buildGrokUsageRefreshKey, buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
-+import { buildAPIKeyUsageRefreshKey, buildGrokUsageRefreshKey, buildOpenAIUsageRefreshKey, hasQuotaScript } from '@/utils/accountUsageRefresh'
+-import { buildGrokUsageRefreshKey, buildAccountUsageRefreshKey } from '@/utils/accountUsageRefresh'
++import { buildGrokUsageRefreshKey, buildAccountUsageRefreshKey, hasQuotaScript } from '@/utils/accountUsageRefresh'
  import { formatDateTime, formatRelativeTime } from '@/utils/format'
  import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
  import { extractApiErrorMessage } from '@/utils/apiError'
-@@ -747,7 +748,7 @@ const usageBatchByAccountId = ref<Record<string, AccountUsageInfo | null>>({})
- const usageBatchErrorByAccountId = ref<Record<string, string | null>>({})
- const usageBatchLoadingByAccountId = ref<Record<string, boolean>>({})
- const usageBatchRequestTokenByAccountId = ref<Record<string, number>>({})
--const usageBatchCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
-+const usageBatchCache = new Map<number, { data: AccountUsageInfo; ts: number; config: string }>()
- const USAGE_BATCH_CACHE_TTL = 5 * 60 * 1000
- const pendingUsageBatchIds = new Set<number>()
- let usageBatchFlushTimer: ReturnType<typeof setTimeout> | null = null
 @@ -763,6 +764,8 @@ const buildDefaultTodayStats = (): WindowStats => ({
  })
  
@@ -2848,47 +2833,21 @@ index 7384e48..152df13 100644
    if (account.platform === 'anthropic') {
      return account.type === 'oauth' || account.type === 'setup-token'
    }
-@@ -810,6 +813,7 @@ const flushQueuedUsageBatch = async () => {
-     acc[String(accountID)] = usageBatchRequestTokenByAccountId.value[String(accountID)] ?? 0
-     return acc
-   }, {})
-+  const configs = new Map(accounts.value.map(account => [account.id, buildAPIKeyUsageRefreshKey(account)]))
- 
-   try {
-     const result = await adminAPI.accounts.getBatchUsage(accountIDs, force)
-@@ -831,7 +835,7 @@ const flushQueuedUsageBatch = async () => {
-       nextErrors[key] = errorMap[key] ?? null
-       nextLoading[key] = false
-       if (usage) {
--        usageBatchCache.set(accountID, { data: usage, ts: now })
-+        usageBatchCache.set(accountID, { data: usage, ts: now, config: configs.get(accountID) ?? '' })
-       } else {
-         usageBatchCache.delete(accountID)
+@@ -827,6 +830,8 @@ const flushQueuedUsageBatch = async () => {
+       if ((usageBatchRequestTokenByAccountId.value[key] ?? 0) !== requestTokensByAccount[key]) {
+         continue
        }
-@@ -869,7 +873,7 @@ const queueBatchedUsage = (account: Account, options?: { force?: boolean }) => {
-     usageBatchCache.delete(cacheKey)
-   } else {
-     const cached = usageBatchCache.get(cacheKey)
--    if (cached && Date.now() - cached.ts < USAGE_BATCH_CACHE_TTL) {
-+    if (cached && cached.config === buildAPIKeyUsageRefreshKey(account) && Date.now() - cached.ts < USAGE_BATCH_CACHE_TTL) {
-       setUsageBatchState(cacheKey, cached.data, null)
-       setUsageBatchLoading(cacheKey, false)
-       return
-@@ -1396,6 +1400,17 @@ watch(accounts, (rows) => {
-   )
- })
- 
-+watch(() => accounts.value.map(account => [account.id, buildAPIKeyUsageRefreshKey(account)] as const), (rows, previous) => {
-+  const previousConfigs = new Map(previous)
-+  for (const [id, config] of rows) {
-+    if (!previousConfigs.has(id) || previousConfigs.get(id) === config) continue
-+    usageBatchCache.delete(id)
-+    usageBatchRequestTokenByAccountId.value[String(id)] = ++usageBatchRequestToken
-+    setUsageBatchState(id, null, null)
-+    setUsageBatchLoading(id, false)
-+  }
-+})
-+
- const isAnyModalOpen = computed(() => {
-   return (
-     showCreate.value ||
++      const currentAccount = accounts.value.find(account => account.id === accountID)
++      if (!currentAccount || buildAccountUsageRefreshKey(currentAccount) !== refreshKeys.get(accountID)) continue
+       const usage = usageMap[key] ?? null
+       nextUsage[key] = usage
+       nextErrors[key] = errorMap[key] ?? null
+@@ -849,6 +854,8 @@ const flushQueuedUsageBatch = async () => {
+       if ((usageBatchRequestTokenByAccountId.value[key] ?? 0) !== requestTokensByAccount[key]) {
+         continue
+       }
++      const currentAccount = accounts.value.find(account => account.id === accountID)
++      if (!currentAccount || buildAccountUsageRefreshKey(currentAccount) !== refreshKeys.get(accountID)) continue
+       nextErrors[key] = 'Failed'
+       nextLoading[key] = false
+     }
