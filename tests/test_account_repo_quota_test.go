@@ -288,8 +288,8 @@ func TestQuotaAccountEditUsesNativeTransaction(t *testing.T) {
 			mock.ExpectBegin()
 			mock.ExpectQuery(`(?s)SELECT.*extra,.*expires_at,.*temp_unschedulable_until,.*temp_unschedulable_reason.*FOR NO KEY UPDATE`).
 				WithArgs(int64(27), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"fixture"}`, nil).
-				WillReturnRows(sqlmock.NewRows([]string{"identity", "ollama", "proxy", "enabled", "sync", "snapshot", "session", "auto", "usage", "opencode", "go_auto", "go_usage", "models", "metadata", "extra", "expires_at", "paused_until", "paused_reason"}).
-					AddRow(identityUnchanged, false, true, nil, nil, nil, nil, nil, nil, false, nil, nil, nil, nil, body, newExpiry, pause, reason))
+				WillReturnRows(sqlmock.NewRows([]string{"identity", "ollama", "proxy", "enabled", "sync", "snapshot", "session", "auto", "usage", "opencode", "go_auto", "go_usage", "models", "metadata", "group_sync_enabled", "extra", "expires_at", "paused_until", "paused_reason"}).
+					AddRow(identityUnchanged, false, true, nil, nil, nil, nil, nil, nil, false, nil, nil, nil, nil, nil, body, newExpiry, pause, reason))
 			mock.ExpectExec(`(?s)UPDATE .*accounts.*SET.*WHERE .*id.*`).WillReturnResult(sqlmock.NewResult(0, 1))
 			mock.ExpectQuery(`(?s)SELECT .* FROM "accounts" WHERE "id" = \$1`).WithArgs(int64(27)).WillReturnRows(updatedAccountRows(27, `{}`))
 			outbox := mock.ExpectExec("INSERT INTO scheduler_outbox")
@@ -302,9 +302,11 @@ func TestQuotaAccountEditUsesNativeTransaction(t *testing.T) {
 			}
 			repo := newAccountRepositoryWithSQL(client, db, nil)
 			if outcome == "native expiry" {
-				err = repo.UpdateWithAccountBillingSettings(context.Background(), account, nil, nil, nil)
+				err = repo.UpdateWithAccountBillingSettings(context.Background(), account, service.AccountBillingSettingsUpdate{})
 			} else {
-				err = repo.UpdateWithAccountBillingSettings(context.Background(), account, nil, nil, nil, &oldExpiry)
+				err = repo.UpdateWithAccountBillingSettings(context.Background(), account, service.AccountBillingSettingsUpdate{
+					MergeAPIKeyQuotaState: true, PreviousExpiresAt: &oldExpiry,
+				})
 			}
 			if outcome == "outbox failure" {
 				require.ErrorContains(t, err, "outbox failed")

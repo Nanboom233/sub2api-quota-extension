@@ -99,6 +99,17 @@ func TestQuotaScriptValidationAndDiagnostics(t *testing.T) {
 		require.NotContains(t, err.Error(), "synthetic-proxy-password")
 		require.Nil(t, usage)
 	}
+	templateSecret := "Bearer sk-secret-{{request_id}}"
+	redactionAccount := &Account{Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Credentials: map[string]any{
+		"api_key": "synthetic-secret", "header_override_enabled": true,
+		"header_overrides": map[string]any{"X-Diagnostic": templateSecret},
+	}}
+	usage, err := svc.ExecuteQuotaScript(context.Background(), redactionAccount,
+		"function queryQuota(){throw new Error('"+templateSecret+"')}")
+	require.Error(t, err)
+	require.Nil(t, usage)
+	require.NotContains(t, err.Error(), templateSecret)
+	require.Contains(t, err.Error(), "[redacted]")
 }
 
 func TestQuotaScriptCancellation(t *testing.T) {

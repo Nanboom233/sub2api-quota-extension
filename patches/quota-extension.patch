@@ -1,5 +1,5 @@
 diff --git a/backend/cmd/server/wire_gen.go b/backend/cmd/server/wire_gen.go
-index b8d8e28..4d1963a 100644
+index 2835089f9..bfcb1cb38 100644
 --- a/backend/cmd/server/wire_gen.go
 +++ b/backend/cmd/server/wire_gen.go
 @@ -208,7 +208,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
@@ -12,7 +12,7 @@ index b8d8e28..4d1963a 100644
  	pluginHostInfo := providePluginHostInfo(buildInfo)
  	pluginKVStore := repository.NewPluginKVStore(redisClient)
 diff --git a/backend/go.mod b/backend/go.mod
-index 7357706..d423676 100644
+index a2c9dc0a5..76f6a0fca 100644
 --- a/backend/go.mod
 +++ b/backend/go.mod
 @@ -19,6 +19,7 @@ require (
@@ -40,14 +40,16 @@ index 7357706..d423676 100644
  	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
  	github.com/go-webauthn/x v0.2.6 // indirect
  	github.com/goccy/go-json v0.10.2 // indirect
-@@ -132,4 +134,5 @@ require (
+@@ -131,6 +133,7 @@ require (
+ 	github.com/google/go-cmp v0.7.0 // indirect
  	github.com/google/go-querystring v1.1.0 // indirect
  	github.com/google/go-tpm v0.9.8 // indirect
 +	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
  	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.3 // indirect
  	github.com/hashicorp/hcl v1.0.0 // indirect
+ 	github.com/hashicorp/hcl/v2 v2.18.1 // indirect
 diff --git a/backend/go.sum b/backend/go.sum
-index 45db034..2b1f8bb 100644
+index 1a1a2ad4d..aaaebbe57 100644
 --- a/backend/go.sum
 +++ b/backend/go.sum
 @@ -165,12 +165,16 @@ github.com/distribution/reference v0.6.0 h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5Qvfr
@@ -78,7 +80,7 @@ index 45db034..2b1f8bb 100644
  github.com/go-viper/mapstructure/v2 v2.5.0 h1:vM5IJoUAy3d7zRSVtIwQgBj7BiWtMPfmPEgAXnvj1Ro=
 diff --git a/backend/internal/handler/admin/account_quota_script_handler.go b/backend/internal/handler/admin/account_quota_script_handler.go
 new file mode 100644
-index 0000000..314e892
+index 000000000..314e892af
 --- /dev/null
 +++ b/backend/internal/handler/admin/account_quota_script_handler.go
 @@ -0,0 +1,94 @@
@@ -177,10 +179,10 @@ index 0000000..314e892
 +	response.Success(c, usage)
 +}
 diff --git a/backend/internal/repository/account_repo.go b/backend/internal/repository/account_repo.go
-index 468a82a..b7a9a4f 100644
+index bdbf25219..b51a77a6f 100644
 --- a/backend/internal/repository/account_repo.go
 +++ b/backend/internal/repository/account_repo.go
-@@ -65,11 +65,12 @@ var schedulerNeutralExtraKeyPrefixes = []string{
+@@ -66,11 +66,12 @@ var schedulerNeutralExtraKeyPrefixes = []string{
  }
  
  var schedulerNeutralExtraKeys = map[string]struct{}{
@@ -198,77 +200,23 @@ index 468a82a..b7a9a4f 100644
  }
  
  const postgresParameterBatchSize = 50000
-@@ -461,8 +462,9 @@ func (r *accountRepository) UpdateWithAccountBillingSettings(
- 	probeEnabled *bool,
- 	rateSyncEnabled *bool,
- 	rateMultiplier *float64,
-+	previousExpiresAt ...*time.Time,
- ) error {
--	return r.updateAccount(ctx, account, probeEnabled, rateSyncEnabled, rateMultiplier)
-+	return r.updateAccount(ctx, account, probeEnabled, rateSyncEnabled, rateMultiplier, previousExpiresAt...)
- }
- 
- func (r *accountRepository) updateAccount(
-@@ -471,6 +473,7 @@ func (r *accountRepository) updateAccount(
- 	explicitProbeEnabled *bool,
- 	explicitRateSyncEnabled *bool,
- 	explicitRateMultiplier *float64,
-+	previousExpiresAt ...*time.Time,
- ) error {
- 	if account == nil {
- 		return nil
-@@ -502,6 +505,7 @@ func (r *accountRepository) updateAccount(
- 		explicitProbeEnabled,
- 		explicitRateSyncEnabled,
- 		explicitRateMultiplier,
-+		previousExpiresAt...,
- 	)
- 	if err != nil {
- 		return translatePersistenceError(err, service.ErrAccountNotFound, nil)
-@@ -531,8 +535,9 @@ func (r *accountRepository) updateLockedAccount(
- 	explicitProbeEnabled *bool,
- 	explicitRateSyncEnabled *bool,
- 	explicitRateMultiplier *float64,
-+	previousExpiresAt ...*time.Time,
- ) (*dbent.Account, error) {
--	extra, err := lockAndMergeAccountProbeExtra(ctx, client, account, explicitProbeEnabled, explicitRateSyncEnabled)
-+	extra, err := lockAndMergeAccountProbeExtra(ctx, client, account, explicitProbeEnabled, explicitRateSyncEnabled, previousExpiresAt...)
- 	if err != nil {
- 		return nil, err
+@@ -558,6 +559,10 @@ func (r *accountRepository) updateLockedAccount(
+ 			builder.SetNotes(*account.Notes)
+ 		}
  	}
-@@ -556,6 +561,18 @@ func (r *accountRepository) updateLockedAccount(
- 		SetErrorMessage(account.ErrorMessage).
- 		SetSchedulable(schedulable).
- 		SetAutoPauseOnExpired(account.AutoPauseOnExpired)
-+	if len(previousExpiresAt) > 0 {
-+		if account.TempUnschedulableUntil != nil {
-+			builder.SetTempUnschedulableUntil(*account.TempUnschedulableUntil)
-+		} else {
-+			builder.ClearTempUnschedulableUntil()
-+		}
-+		if account.TempUnschedulableReason != "" {
-+			builder.SetTempUnschedulableReason(account.TempUnschedulableReason)
-+		} else {
-+			builder.ClearTempUnschedulableReason()
-+		}
++	if settings.MergeAPIKeyQuotaState && account.TempUnschedulableUntil == nil && account.TempUnschedulableReason == "" {
++		builder.ClearTempUnschedulableUntil()
++		builder.ClearTempUnschedulableReason()
 +	}
- 
- 	if explicitRateMultiplier != nil {
- 		builder.SetRateMultiplier(*explicitRateMultiplier)
-@@ -627,6 +644,7 @@ func lockAndMergeAccountProbeExtra(
- 	account *service.Account,
- 	explicitProbeEnabled *bool,
- 	explicitRateSyncEnabled *bool,
-+	previousExpiresAt ...*time.Time,
- ) (map[string]any, error) {
- 	credentials, err := json.Marshal(normalizeJSONMap(account.Credentials))
- 	if err != nil {
-@@ -682,7 +700,11 @@ func lockAndMergeAccountProbeExtra(
- 			extra -> 'opencode_go_usage_auto_refresh',
+ 	if settings.RateMultiplier != nil {
+ 		builder.SetRateMultiplier(*settings.RateMultiplier)
+ 	}
+@@ -679,7 +684,11 @@ func lockAndMergeAccountProbeExtra(
  			extra -> 'opencode_go_usage_snapshot',
  			extra -> 'grok_observed_models',
--			extra -> 'upstream_model_metadata'
-+			extra -> 'upstream_model_metadata',
+ 			extra -> 'upstream_model_metadata',
+-			extra -> 'upstream_billing_group_sync_enabled'
++			extra -> 'upstream_billing_group_sync_enabled',
 +			extra,
 +			expires_at,
 +			temp_unschedulable_until,
@@ -276,7 +224,7 @@ index 468a82a..b7a9a4f 100644
  		FROM accounts
  		WHERE id = $1 AND deleted_at IS NULL
  		FOR NO KEY UPDATE
-@@ -713,6 +735,10 @@ func lockAndMergeAccountProbeExtra(
+@@ -711,6 +720,10 @@ func lockAndMergeAccountProbeExtra(
  		currentOpenCodeSnapshot        []byte
  		currentGrokObservedModels      []byte
  		currentUpstreamModelMetadata   []byte
@@ -287,10 +235,10 @@ index 468a82a..b7a9a4f 100644
  	)
  	if err := rows.Scan(
  		&identityUnchanged,
-@@ -729,6 +755,10 @@ func lockAndMergeAccountProbeExtra(
- 		&currentOpenCodeSnapshot,
+@@ -728,6 +741,10 @@ func lockAndMergeAccountProbeExtra(
  		&currentGrokObservedModels,
  		&currentUpstreamModelMetadata,
+ 		&currentGroupSyncEnabled,
 +		&currentQuotaExtra,
 +		&currentExpiresAt,
 +		&currentPausedUntil,
@@ -298,11 +246,11 @@ index 468a82a..b7a9a4f 100644
  	); err != nil {
  		return nil, err
  	}
-@@ -737,6 +767,40 @@ func lockAndMergeAccountProbeExtra(
+@@ -736,6 +753,40 @@ func lockAndMergeAccountProbeExtra(
  	}
  
  	extra := copyJSONMap(normalizeJSONMap(account.Extra))
-+	if len(previousExpiresAt) > 0 {
++	if settings.MergeAPIKeyQuotaState {
 +		current := map[string]any{}
 +		if len(currentQuotaExtra) > 0 {
 +			if err := json.Unmarshal(currentQuotaExtra, &current); err != nil {
@@ -318,7 +266,7 @@ index 468a82a..b7a9a4f 100644
 +				}
 +			}
 +		}
-+		previous := previousExpiresAt[0]
++		previous := settings.PreviousExpiresAt
 +		if (account.ExpiresAt == nil && previous == nil) ||
 +			(account.ExpiresAt != nil && previous != nil && account.ExpiresAt.Unix() == previous.Unix()) {
 +			account.ExpiresAt = nil
@@ -339,7 +287,7 @@ index 468a82a..b7a9a4f 100644
  	for _, key := range []string{
  		service.UpstreamBillingProbeEnabledExtraKey,
  		service.UpstreamBillingRateSyncEnabledExtraKey,
-@@ -2899,6 +2963,14 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
+@@ -2915,6 +2966,14 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
  	if clearProbeSnapshot {
  		extraExpression = "(" + extraExpression + ") - 'upstream_billing_probe'"
  	}
@@ -354,7 +302,7 @@ index 468a82a..b7a9a4f 100644
  	if service.ShouldEnsureCodexFingerprintSeedForExtraUpdates(updates) {
  		extraExpression = ensureCodexFingerprintSeedSQL(extraExpression)
  	}
-@@ -3139,6 +3211,272 @@ func ollamaCloudUsageSnapshotClearRequested(extra map[string]any) bool {
+@@ -3162,6 +3221,272 @@ func ollamaCloudUsageSnapshotClearRequested(extra map[string]any) bool {
  	return ok && value == nil
  }
  
@@ -627,19 +575,7 @@ index 468a82a..b7a9a4f 100644
  func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates service.AccountBulkUpdate) (int64, error) {
  	if len(ids) == 0 {
  		return 0, nil
-@@ -3202,6 +3540,11 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
- 		args = append(args, *updates.Schedulable)
- 		idx++
- 	}
-+	if updates.ExpiresAt != nil {
-+		setClauses = append(setClauses, "expires_at = $"+itoa(idx))
-+		args = append(args, *updates.ExpiresAt)
-+		idx++
-+	}
- 	if updates.ProbeEnabled != nil {
- 		if updates.Extra == nil {
- 			updates.Extra = make(map[string]any)
-@@ -3273,12 +3616,22 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
+@@ -3296,12 +3621,22 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
  			extraExpression += " || $" + itoa(idx) + "::jsonb"
  			args = append(args, payload)
  			idx++
@@ -664,7 +600,7 @@ index 468a82a..b7a9a4f 100644
  		}
  		eligibleAccount := "platform IN (" + ollamaCloudUsagePlatformsSQL + ") AND type = 'apikey'"
  		groupIdentityChanged := ""
-@@ -3348,6 +3701,14 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
+@@ -3371,6 +3706,14 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
  		}
  		setClauses = append(setClauses, "extra = "+extraExpression)
  	}
@@ -679,16 +615,16 @@ index 468a82a..b7a9a4f 100644
  
  	if len(setClauses) == 0 {
  		return 0, nil
-@@ -3417,7 +3778,7 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
+@@ -3440,7 +3783,7 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
  		}
  	}
  	if rows > 0 && contextTx == nil {
 -		shouldSync := false
-+		shouldSync := updates.ExpiresAt != nil || clearAPIKeyQuotaState
++		shouldSync := clearAPIKeyQuotaState
  		if updates.Status != nil && (*updates.Status == service.StatusError || *updates.Status == service.StatusDisabled) {
  			shouldSync = true
  		}
-@@ -4156,7 +4517,16 @@ func (r *accountRepository) ResetQuotaUsedAndClearRateLimitCooldown(ctx context.
+@@ -4179,7 +4522,16 @@ func (r *accountRepository) ResetQuotaUsedAndClearRateLimitCooldown(ctx context.
  		`UPDATE accounts SET extra = (
  			COALESCE(extra, '{}'::jsonb)
  			|| '{"quota_used": 0, "quota_daily_used": 0, "quota_weekly_used": 0}'::jsonb
@@ -707,27 +643,27 @@ index 468a82a..b7a9a4f 100644
  		WHERE id = $1 AND deleted_at IS NULL`,
  		id)
 diff --git a/backend/internal/repository/account_repo_grok_managed_extra_test.go b/backend/internal/repository/account_repo_grok_managed_extra_test.go
-index ff224d2..ffd2f07 100644
+index cf4e36bc0..1d0cbb242 100644
 --- a/backend/internal/repository/account_repo_grok_managed_extra_test.go
 +++ b/backend/internal/repository/account_repo_grok_managed_extra_test.go
 @@ -143,7 +143,8 @@ func TestLockAndMergeAccountProbeExtraKeepsLatestGrokManagedKeys(t *testing.T) {
  					"ollama_session", "ollama_auto", "ollama_snapshot",
  					"opencode_group_unchanged", "opencode_auto", "opencode_snapshot",
- 					"grok_observed_models", "upstream_model_metadata",
--				}).AddRow(false, false, true, nil, nil, nil, nil, nil, nil, false, nil, nil, tt.databaseModels, tt.databaseMetadata))
+ 					"grok_observed_models", "upstream_model_metadata", "group_sync_enabled",
+-				}).AddRow(false, false, true, nil, nil, nil, nil, nil, nil, false, nil, nil, tt.databaseModels, tt.databaseMetadata, nil))
 +					"extra", "expires_at", "paused_until", "paused_reason",
-+				}).AddRow(false, false, true, nil, nil, nil, nil, nil, nil, false, nil, nil, tt.databaseModels, tt.databaseMetadata, nil, nil, nil, nil))
++				}).AddRow(false, false, true, nil, nil, nil, nil, nil, nil, false, nil, nil, tt.databaseModels, tt.databaseMetadata, nil, nil, nil, nil, nil))
  
  			account := &service.Account{
  				ID:          41,
 diff --git a/backend/internal/repository/account_repo_opencode_go_usage_test.go b/backend/internal/repository/account_repo_opencode_go_usage_test.go
-index 43581ec..d22852a 100644
+index fa0b6b002..7cd025228 100644
 --- a/backend/internal/repository/account_repo_opencode_go_usage_test.go
 +++ b/backend/internal/repository/account_repo_opencode_go_usage_test.go
 @@ -77,6 +77,7 @@ func openCodeGoMergeMockColumns() []string {
  		"ollama_session", "ollama_auto", "ollama_snapshot",
  		"opencode_group_unchanged", "opencode_auto", "opencode_snapshot",
- 		"grok_observed_models", "upstream_model_metadata",
+ 		"grok_observed_models", "upstream_model_metadata", "group_sync_enabled",
 +		"extra", "expires_at", "paused_until", "paused_reason",
  	}
  }
@@ -736,23 +672,23 @@ index 43581ec..d22852a 100644
  			mock.ExpectQuery(`(?s)`+regexp.QuoteMeta("SELECT")+`.*`+regexp.QuoteMeta("FOR NO KEY UPDATE")).
  				WithArgs(tt.account.ID, tt.account.Platform, tt.account.Type, string(credentials), nil).
  				WillReturnRows(sqlmock.NewRows(openCodeGoMergeMockColumns()).
--					AddRow(false, false, tt.proxyUnchanged, nil, nil, nil, nil, nil, nil, tt.groupUnchanged, tt.databaseAuto, tt.databaseSnapshot, nil, nil))
-+					AddRow(false, false, tt.proxyUnchanged, nil, nil, nil, nil, nil, nil, tt.groupUnchanged, tt.databaseAuto, tt.databaseSnapshot, nil, nil, nil, nil, nil, nil))
+-					AddRow(false, false, tt.proxyUnchanged, nil, nil, nil, nil, nil, nil, tt.groupUnchanged, tt.databaseAuto, tt.databaseSnapshot, nil, nil, nil))
++					AddRow(false, false, tt.proxyUnchanged, nil, nil, nil, nil, nil, nil, tt.groupUnchanged, tt.databaseAuto, tt.databaseSnapshot, nil, nil, nil, nil, nil, nil, nil))
  
- 			got, err := lockAndMergeAccountProbeExtra(context.Background(), client, tt.account, nil, nil)
+ 			got, err := lockAndMergeAccountProbeExtra(context.Background(), client, tt.account, service.AccountBillingSettingsUpdate{})
  			require.NoError(t, err)
 diff --git a/backend/internal/repository/account_repo_upstream_billing_probe_update_test.go b/backend/internal/repository/account_repo_upstream_billing_probe_update_test.go
-index 15bccac..da5030a 100644
+index bf7b45add..2f2c6394f 100644
 --- a/backend/internal/repository/account_repo_upstream_billing_probe_update_test.go
 +++ b/backend/internal/repository/account_repo_upstream_billing_probe_update_test.go
 @@ -81,8 +81,8 @@ func TestLockAndMergeAccountProbeExtraUsesCurrentDatabaseSnapshot(t *testing.T)
  
  			mock.ExpectQuery(`(?s)`+regexp.QuoteMeta("SELECT")+`.*`+regexp.QuoteMeta("FOR NO KEY UPDATE")).
  				WithArgs(int64(27), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil).
--				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot", "grok_observed_models", "upstream_model_metadata"}).
--					AddRow(tt.identityUnchanged, false, true, tt.databaseEnabled, nil, tt.databaseSnapshot, nil, nil, nil, false, nil, nil, nil, nil))
-+				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot", "grok_observed_models", "upstream_model_metadata", "extra", "expires_at", "paused_until", "paused_reason"}).
-+					AddRow(tt.identityUnchanged, false, true, tt.databaseEnabled, nil, tt.databaseSnapshot, nil, nil, nil, false, nil, nil, nil, nil, nil, nil, nil, nil))
+-				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot", "grok_observed_models", "upstream_model_metadata", "group_sync_enabled"}).
+-					AddRow(tt.identityUnchanged, false, true, tt.databaseEnabled, nil, tt.databaseSnapshot, nil, nil, nil, false, nil, nil, nil, nil, nil))
++				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot", "grok_observed_models", "upstream_model_metadata", "group_sync_enabled", "extra", "expires_at", "paused_until", "paused_reason"}).
++					AddRow(tt.identityUnchanged, false, true, tt.databaseEnabled, nil, tt.databaseSnapshot, nil, nil, nil, false, nil, nil, nil, nil, nil, nil, nil, nil, nil))
  
  			account := &service.Account{
  				ID:          27,
@@ -760,10 +696,10 @@ index 15bccac..da5030a 100644
  
  			mock.ExpectQuery(`(?s)`+regexp.QuoteMeta("SELECT")+`.*`+regexp.QuoteMeta("FOR NO KEY UPDATE")).
  				WithArgs(int64(31), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil).
--				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot", "grok_observed_models", "upstream_model_metadata"}).
--					AddRow(true, false, true, tt.databaseEnabled, tt.databaseRateSync, nil, nil, nil, nil, false, nil, nil, nil, nil))
-+				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot", "grok_observed_models", "upstream_model_metadata", "extra", "expires_at", "paused_until", "paused_reason"}).
-+					AddRow(true, false, true, tt.databaseEnabled, tt.databaseRateSync, nil, nil, nil, nil, false, nil, nil, nil, nil, nil, nil, nil, nil))
+-				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot", "grok_observed_models", "upstream_model_metadata", "group_sync_enabled"}).
+-					AddRow(true, false, true, tt.databaseEnabled, tt.databaseRateSync, nil, nil, nil, nil, false, nil, nil, nil, nil, nil))
++				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot", "grok_observed_models", "upstream_model_metadata", "group_sync_enabled", "extra", "expires_at", "paused_until", "paused_reason"}).
++					AddRow(true, false, true, tt.databaseEnabled, tt.databaseRateSync, nil, nil, nil, nil, false, nil, nil, nil, nil, nil, nil, nil, nil, nil))
  
  			account := &service.Account{
  				ID:          31,
@@ -771,10 +707,10 @@ index 15bccac..da5030a 100644
  
  			mock.ExpectQuery(`(?s)`+regexp.QuoteMeta("SELECT")+`.*`+regexp.QuoteMeta("FOR NO KEY UPDATE")).
  				WithArgs(int64(29), service.PlatformAnthropic, service.AccountTypeAPIKey, `{"api_key":"key","base_url":"https://ollama.com"}`, nil).
--				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot", "grok_observed_models", "upstream_model_metadata"}).
--					AddRow(identityUnchanged, identityUnchanged, true, nil, nil, nil, []byte(`"local-ciphertext"`), []byte(`true`), []byte(`{"status":"ok"}`), false, nil, nil, nil, nil))
-+				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot", "grok_observed_models", "upstream_model_metadata", "extra", "expires_at", "paused_until", "paused_reason"}).
-+					AddRow(identityUnchanged, identityUnchanged, true, nil, nil, nil, []byte(`"local-ciphertext"`), []byte(`true`), []byte(`{"status":"ok"}`), false, nil, nil, nil, nil, nil, nil, nil, nil))
+-				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot", "grok_observed_models", "upstream_model_metadata", "group_sync_enabled"}).
+-					AddRow(identityUnchanged, identityUnchanged, true, nil, nil, nil, []byte(`"local-ciphertext"`), []byte(`true`), []byte(`{"status":"ok"}`), false, nil, nil, nil, nil, nil))
++				WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot", "grok_observed_models", "upstream_model_metadata", "group_sync_enabled", "extra", "expires_at", "paused_until", "paused_reason"}).
++					AddRow(identityUnchanged, identityUnchanged, true, nil, nil, nil, []byte(`"local-ciphertext"`), []byte(`true`), []byte(`{"status":"ok"}`), false, nil, nil, nil, nil, nil, nil, nil, nil, nil))
  
  			account := &service.Account{
  				ID: 29, Platform: service.PlatformAnthropic, Type: service.AccountTypeAPIKey,
@@ -782,41 +718,30 @@ index 15bccac..da5030a 100644
  	mock.ExpectBegin()
  	mock.ExpectQuery(`(?s)`+regexp.QuoteMeta("SELECT")+`.*`+regexp.QuoteMeta("FOR NO KEY UPDATE")).
  		WithArgs(int64(27), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil).
--		WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot", "grok_observed_models", "upstream_model_metadata"}).
--			AddRow(true, false, true, []byte(`true`), []byte(`true`), []byte(`{"status":"ok"}`), nil, nil, nil, false, nil, nil, nil, nil))
-+		WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot", "grok_observed_models", "upstream_model_metadata", "extra", "expires_at", "paused_until", "paused_reason"}).
-+			AddRow(true, false, true, []byte(`true`), []byte(`true`), []byte(`{"status":"ok"}`), nil, nil, nil, false, nil, nil, nil, nil, nil, nil, nil, nil))
+-		WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot", "grok_observed_models", "upstream_model_metadata", "group_sync_enabled"}).
+-			AddRow(true, false, true, []byte(`true`), []byte(`true`), []byte(`{"status":"ok"}`), nil, nil, nil, false, nil, nil, nil, nil, nil))
++		WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot", "grok_observed_models", "upstream_model_metadata", "group_sync_enabled", "extra", "expires_at", "paused_until", "paused_reason"}).
++			AddRow(true, false, true, []byte(`true`), []byte(`true`), []byte(`{"status":"ok"}`), nil, nil, nil, false, nil, nil, nil, nil, nil, nil, nil, nil, nil))
  	mock.ExpectExec(`(?s)UPDATE .*accounts.*SET.*WHERE .*id.*`).
  		WillReturnResult(sqlmock.NewResult(0, 1))
  	mock.ExpectQuery(`(?s)SELECT .* FROM "accounts" WHERE "id" = \$1`).
 diff --git a/backend/internal/repository/scheduler_cache.go b/backend/internal/repository/scheduler_cache.go
-index b003ae1..9fa66c7 100644
+index 05a322396..9ec6601e9 100644
 --- a/backend/internal/repository/scheduler_cache.go
 +++ b/backend/internal/repository/scheduler_cache.go
-@@ -1584,6 +1584,18 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
- 		service.UpstreamBillingProbeExtraKey,
+@@ -1589,6 +1589,7 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
  		service.GrokMediaEligibleExtraKey,
  		"grok_billing_snapshot",
-+		service.APIKeyQuotaExhaustedExtraKey,
-+		service.APIKeyQuotaBalanceExhaustedExtraKey,
-+		service.APIKeyQuota5hUsedPercentExtraKey,
-+		service.APIKeyQuota5hResetAtExtraKey,
-+		service.APIKeyQuota1dUsedPercentExtraKey,
-+		service.APIKeyQuota1dResetAtExtraKey,
-+		service.APIKeyQuota7dUsedPercentExtraKey,
-+		service.APIKeyQuota7dResetAtExtraKey,
-+		service.APIKeyQuota30dUsedPercentExtraKey,
-+		service.APIKeyQuota30dResetAtExtraKey,
-+		service.APIKeyQuotaTotalUsedPercentExtraKey,
-+		service.APIKeyQuotaTotalResetAtExtraKey,
  	}
++	keys = append(keys, service.APIKeyQuotaSchedulingExtraKeys...)
  	filtered := make(map[string]any)
  	for _, key := range keys {
+ 		if value, ok := extra[key]; ok && value != nil {
 diff --git a/backend/internal/server/routes/admin.go b/backend/internal/server/routes/admin.go
-index 51efcd3..375cbbf 100644
+index 3e9d229bd..4fa52b53f 100644
 --- a/backend/internal/server/routes/admin.go
 +++ b/backend/internal/server/routes/admin.go
-@@ -407,6 +407,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
+@@ -408,6 +408,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
  		accounts.GET("/:id/usage", h.Admin.Account.GetUsage)
  		accounts.GET("/:id/today-stats", h.Admin.Account.GetTodayStats)
  		accounts.POST("/usage/batch", h.Admin.Account.GetBatchUsage)
@@ -825,10 +750,10 @@ index 51efcd3..375cbbf 100644
  		accounts.POST("/:id/clear-rate-limit", h.Admin.Account.ClearRateLimit)
  		accounts.POST("/:id/reset-quota", h.Admin.Account.ResetQuota)
 diff --git a/backend/internal/service/account.go b/backend/internal/service/account.go
-index 51b253b..5d59a1c 100644
+index a59813ce5..bb50d3b8f 100644
 --- a/backend/internal/service/account.go
 +++ b/backend/internal/service/account.go
-@@ -3099,6 +3099,9 @@ func (a *Account) IsWeeklyQuotaPeriodExpired() bool {
+@@ -3105,6 +3105,9 @@ func (a *Account) IsWeeklyQuotaPeriodExpired() bool {
  
  // IsQuotaExceeded 检查 API Key 账号配额是否已超限（任一维度超限即返回 true）
  func (a *Account) IsQuotaExceeded() bool {
@@ -838,7 +763,7 @@ index 51b253b..5d59a1c 100644
  	// 总额度
  	if limit := a.GetQuotaLimit(); limit > 0 && a.GetQuotaUsed() >= limit {
  		return true
-@@ -3132,6 +3135,38 @@ func (a *Account) IsQuotaExceeded() bool {
+@@ -3138,6 +3141,38 @@ func (a *Account) IsQuotaExceeded() bool {
  	return false
  }
  
@@ -879,10 +804,10 @@ index 51b253b..5d59a1c 100644
  func (a *Account) GetWindowCostLimit() float64 {
 diff --git a/backend/internal/service/account_quota_script.go b/backend/internal/service/account_quota_script.go
 new file mode 100644
-index 0000000..e8c57c7
+index 000000000..ff7f96a5d
 --- /dev/null
 +++ b/backend/internal/service/account_quota_script.go
-@@ -0,0 +1,374 @@
+@@ -0,0 +1,368 @@
 +package service
 +
 +import (
@@ -1207,7 +1132,7 @@ index 0000000..e8c57c7
 +		profile = HTTPUpstreamProfileOpenAI
 +	}
 +	req = req.WithContext(WithHTTPUpstreamRedirectsDisabled(WithHTTPUpstreamProfile(req.Context(), profile)))
-+	account.ApplyHeaderOverrides(req.Header)
++	account.ApplyHeaderOverrides(req.Context(), req.Header)
 +	var tlsProfile *tlsfingerprint.Profile
 +	if s.tlsFPProfileService != nil {
 +		tlsProfile = s.tlsFPProfileService.ResolveTLSProfile(account)
@@ -1246,19 +1171,13 @@ index 0000000..e8c57c7
 +			}
 +		}
 +	}
-+	headers := make(http.Header)
-+	account.ApplyHeaderOverrides(headers)
-+	for _, values := range headers {
-+		for _, secret := range values {
-+			if secret != "" {
-+				message = strings.ReplaceAll(message, secret, "[redacted]")
-+			}
-+		}
++	for _, secret := range account.GetHeaderOverrides() {
++		message = strings.ReplaceAll(message, secret, "[redacted]")
 +	}
 +	return message
 +}
 diff --git a/backend/internal/service/account_scheduling_threshold_eval.go b/backend/internal/service/account_scheduling_threshold_eval.go
-index 24c45d9..7de0691 100644
+index 24c45d9a9..7de0691f8 100644
 --- a/backend/internal/service/account_scheduling_threshold_eval.go
 +++ b/backend/internal/service/account_scheduling_threshold_eval.go
 @@ -64,6 +64,9 @@ func EvaluateAccountSchedulingThreshold(account *Account, thresholds map[string]
@@ -1308,27 +1227,20 @@ index 24c45d9..7de0691 100644
  	var winner *accountSchedulingThresholdCandidate
  	for _, candidate := range candidates {
 diff --git a/backend/internal/service/account_service.go b/backend/internal/service/account_service.go
-index 541d6ab..4f70d76 100644
+index 0d2ff14ce..f0564383c 100644
 --- a/backend/internal/service/account_service.go
 +++ b/backend/internal/service/account_service.go
-@@ -146,6 +146,7 @@ type AccountBillingSettingsRepository interface {
- 		probeEnabled *bool,
- 		rateSyncEnabled *bool,
- 		rateMultiplier *float64,
-+		previousExpiresAt ...*time.Time,
- 	) error
+@@ -142,6 +142,8 @@ type AccountBillingSettingsUpdate struct {
+ 	ProbeEnabled, RateSyncEnabled, GroupSyncEnabled *bool
+ 	RateMultiplier                                  *float64
+ 	SetName, SetNotes                               bool
++	MergeAPIKeyQuotaState                           bool
++	PreviousExpiresAt                               *time.Time
  }
  
-@@ -168,6 +169,7 @@ type AccountBulkUpdate struct {
- 	LoadFactor     *int
- 	Status         *string
- 	Schedulable    *bool
-+	ExpiresAt      *time.Time
- 	Credentials    map[string]any
- 	Extra          map[string]any
- 	ProbeEnabled   *bool
+ type AccountBillingSettingsRepository interface {
 diff --git a/backend/internal/service/account_test_service.go b/backend/internal/service/account_test_service.go
-index b195356..11b718e 100644
+index 0a0926a9e..935cc2566 100644
 --- a/backend/internal/service/account_test_service.go
 +++ b/backend/internal/service/account_test_service.go
 @@ -281,16 +281,20 @@ func NewAccountTestService(
@@ -1359,10 +1271,10 @@ index b195356..11b718e 100644
  		return "", err
 diff --git a/backend/internal/service/account_upstream_quota.go b/backend/internal/service/account_upstream_quota.go
 new file mode 100644
-index 0000000..694727f
+index 000000000..08add1bd9
 --- /dev/null
 +++ b/backend/internal/service/account_upstream_quota.go
-@@ -0,0 +1,421 @@
+@@ -0,0 +1,410 @@
 +package service
 +
 +import (
@@ -1413,21 +1325,10 @@ index 0000000..694727f
 +	APIKeyQuotaTotalResetAtExtraKey,
 +}
 +
-+var APIKeyQuotaManagedExtraKeys = []string{
-+	APIKeyUsageUnsupportedIdentityExtraKey,
-+	APIKeyQuotaExhaustedExtraKey,
-+	APIKeyQuotaBalanceExhaustedExtraKey,
-+	APIKeyQuota5hUsedPercentExtraKey,
-+	APIKeyQuota5hResetAtExtraKey,
-+	APIKeyQuota1dUsedPercentExtraKey,
-+	APIKeyQuota1dResetAtExtraKey,
-+	APIKeyQuota7dUsedPercentExtraKey,
-+	APIKeyQuota7dResetAtExtraKey,
-+	APIKeyQuota30dUsedPercentExtraKey,
-+	APIKeyQuota30dResetAtExtraKey,
-+	APIKeyQuotaTotalUsedPercentExtraKey,
-+	APIKeyQuotaTotalResetAtExtraKey,
-+}
++var APIKeyQuotaManagedExtraKeys = append(
++	[]string{APIKeyUsageUnsupportedIdentityExtraKey},
++	APIKeyQuotaSchedulingExtraKeys...,
++)
 +
 +type apiKeyQuotaStateWriter interface {
 +	UpdateAPIKeyQuotaState(context.Context, *Account, *UsageInfo, *time.Time, *string) (bool, error)
@@ -1651,7 +1552,7 @@ index 0000000..694727f
 +	req = req.WithContext(WithHTTPUpstreamRedirectsDisabled(WithHTTPUpstreamProfile(req.Context(), profile)))
 +	req.Header.Set("Accept", "application/json")
 +	req.Header.Set("Authorization", "Bearer "+apiKey)
-+	account.ApplyHeaderOverrides(req.Header)
++	account.ApplyHeaderOverrides(req.Context(), req.Header)
 +	var tlsProfile *tlsfingerprint.Profile
 +	if s.tlsFPProfileService != nil {
 +		tlsProfile = s.tlsFPProfileService.ResolveTLSProfile(account)
@@ -1785,7 +1686,7 @@ index 0000000..694727f
 +	return extraUpdates, latestResetAt
 +}
 diff --git a/backend/internal/service/account_usage_service.go b/backend/internal/service/account_usage_service.go
-index 6999daa..b30bda7 100644
+index 07272f5bf..437350195 100644
 --- a/backend/internal/service/account_usage_service.go
 +++ b/backend/internal/service/account_usage_service.go
 @@ -9,10 +9,12 @@ import (
@@ -1801,7 +1702,7 @@ index 6999daa..b30bda7 100644
  	"github.com/Wei-Shaw/sub2api/internal/pkg/adminaccess"
  	httppool "github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
  	openaipkg "github.com/Wei-Shaw/sub2api/internal/pkg/openai"
-@@ -233,6 +235,10 @@ type UsageInfo struct {
+@@ -240,6 +242,10 @@ type UsageInfo struct {
  	GrokLocalUsageMonthly  *WindowStats     `json:"grok_local_usage_monthly,omitempty"`
  	// ThirtyDay is the official monthly billing window (used/monthlyLimit %).
  	ThirtyDay   *UsageProgress      `json:"thirty_day,omitempty"`
@@ -1812,7 +1713,7 @@ index 6999daa..b30bda7 100644
  	GrokBilling *xai.BillingSummary `json:"grok_billing,omitempty"`
  
  	// Antigravity 账号级信息
-@@ -332,6 +338,8 @@ type AccountUsageService struct {
+@@ -339,6 +345,8 @@ type AccountUsageService struct {
  	openAIQuotaService      *OpenAIQuotaService
  	cache                   *UsageCache
  	identityCache           IdentityCache
@@ -1821,7 +1722,7 @@ index 6999daa..b30bda7 100644
  	tlsFPProfileService     *TLSFingerprintProfileService
  	agentIdentityTaskMu     sync.Mutex
  	agentIdentityWS         agentIdentityWSConnectionInvalidator
-@@ -381,6 +389,41 @@ func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *A
+@@ -388,6 +396,41 @@ func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *A
  	if err := scopedAccountAccess(ctx, s.accountRepo, account, "accounts.usage.read", true); err != nil {
  		return nil, err
  	}
@@ -1864,30 +1765,20 @@ index 6999daa..b30bda7 100644
  		return nil, fmt.Errorf("account is required")
  	}
 diff --git a/backend/internal/service/admin_account.go b/backend/internal/service/admin_account.go
-index 0521f7a..204933e 100644
+index 8eae972e8..8596564de 100644
 --- a/backend/internal/service/admin_account.go
 +++ b/backend/internal/service/admin_account.go
-@@ -152,6 +152,19 @@ var duplicateAccountDiscardedExtraKeys = map[string]struct{}{
- 	"codex_7d_reset_after_seconds":         {},
- 	"codex_7d_window_minutes":              {},
- 	"codex_7d_reset_at":                    {},
-+	APIKeyUsageUnsupportedIdentityExtraKey: {},
-+	APIKeyQuotaExhaustedExtraKey:           {},
-+	APIKeyQuotaBalanceExhaustedExtraKey:    {},
-+	APIKeyQuota5hUsedPercentExtraKey:       {},
-+	APIKeyQuota5hResetAtExtraKey:           {},
-+	APIKeyQuota1dUsedPercentExtraKey:       {},
-+	APIKeyQuota1dResetAtExtraKey:           {},
-+	APIKeyQuota7dUsedPercentExtraKey:       {},
-+	APIKeyQuota7dResetAtExtraKey:           {},
-+	APIKeyQuota30dUsedPercentExtraKey:      {},
-+	APIKeyQuota30dResetAtExtraKey:          {},
-+	APIKeyQuotaTotalUsedPercentExtraKey:    {},
-+	APIKeyQuotaTotalResetAtExtraKey:        {},
+@@ -164,6 +164,9 @@ func duplicateAccountExtra(value map[string]any) (map[string]any, error) {
+ 	for key := range duplicateAccountDiscardedExtraKeys {
+ 		delete(cloned, key)
+ 	}
++	for _, key := range APIKeyQuotaManagedExtraKeys {
++		delete(cloned, key)
++	}
+ 	return cloned, nil
  }
  
- func duplicateAccountExtra(value map[string]any) (map[string]any, error) {
-@@ -494,6 +507,13 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
+@@ -507,6 +510,13 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
  	if err := ValidateUpstreamRequestIDHeaderExtra(accountExtra); err != nil {
  		return nil, err
  	}
@@ -1901,7 +1792,7 @@ index 0521f7a..204933e 100644
  
  	// 绑定分组
  	groupIDs := input.GroupIDs
-@@ -605,8 +625,14 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
+@@ -621,8 +631,14 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
  		if err := ValidateUpstreamRequestIDHeaderExtra(normalizedExtra); err != nil {
  			return nil, err
  		}
@@ -1916,7 +1807,7 @@ index 0521f7a..204933e 100644
  	previousOllamaUsageIdentity := ollamaCloudUsageIdentity(account)
  	previousOpenCodeUsageIdentity := openCodeGoUsageIdentity(account)
  	// 安全/身份不变量(影子账号):通用更新路径被 edit/re-auth/refresh/batch 共用,
-@@ -714,6 +740,12 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
+@@ -738,6 +754,12 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
  				normalizedExtra[key] = v
  			}
  		}
@@ -1929,15 +1820,10 @@ index 0521f7a..204933e 100644
  		normalizedExtra = prepareCodexFingerprintExtraForUpdate(account, normalizedExtra)
  		account.Extra = normalizedExtra
  		if account.Platform == PlatformAntigravity && wasOveragesEnabled && !account.IsOveragesEnabled() {
-@@ -777,12 +809,31 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
- 		}
- 		account.Proxy = nil // 清除关联对象，防止 GORM Save 时根据 Proxy.ID 覆盖 ProxyID
+@@ -761,6 +783,32 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
+ 	if input.Extra == nil {
+ 		account.Extra = prepareCodexFingerprintExtraForUpdate(account, account.Extra)
  	}
--	if !reflect.DeepEqual(previousProbeIdentity, upstreamBillingProbeIdentity(account)) && account.Extra != nil {
--		delete(account.Extra, UpstreamBillingProbeExtraKey)
--		if !isUpstreamBillingProbeAccount(account) {
--			delete(account.Extra, UpstreamBillingProbeEnabledExtraKey)
--			delete(account.Extra, UpstreamBillingRateSyncEnabledExtraKey)
 +	probeIdentityChanged := !reflect.DeepEqual(previousProbeIdentity, upstreamBillingProbeIdentity(account))
 +	quotaScriptChanged := AccountQuotaScript(account) != previousQuotaScript
 +	if probeIdentityChanged {
@@ -1950,7 +1836,7 @@ index 0521f7a..204933e 100644
 +				delete(account.Extra, UpstreamBillingProbeEnabledExtraKey)
 +				delete(account.Extra, UpstreamBillingRateSyncEnabledExtraKey)
 +			}
- 		}
++		}
 +	} else if quotaScriptChanged {
 +		if account.Extra != nil {
 +			for _, key := range APIKeyQuotaSchedulingExtraKeys {
@@ -1963,18 +1849,19 @@ index 0521f7a..204933e 100644
 +		strings.HasPrefix(account.TempUnschedulableReason, "apikey_quota_") {
 +		account.TempUnschedulableUntil = nil
 +		account.TempUnschedulableReason = ""
- 	}
- 	if account.Extra != nil {
- 		if !IsOllamaCloudUsageAccount(account) {
-@@ -883,6 +934,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
- 			requestedProbeEnabledUpdate,
- 			requestedRateSyncEnabledUpdate,
- 			input.RateMultiplier,
-+			previousExpiresAt,
++	}
+ 	if groupSyncUpdate != nil && *groupSyncUpdate {
+ 		if requestedProbeEnabledUpdate != nil && !*requestedProbeEnabledUpdate {
+ 			return nil, ErrUpstreamBillingGroupSyncRequiresProbe
+@@ -917,6 +965,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
+ 				ProbeEnabled: requestedProbeEnabledUpdate, RateSyncEnabled: requestedRateSyncEnabledUpdate,
+ 				GroupSyncEnabled: groupSyncUpdate, RateMultiplier: input.RateMultiplier,
+ 				SetName: input.Name != "", SetNotes: input.Notes != nil,
++				MergeAPIKeyQuotaState: true, PreviousExpiresAt: previousExpiresAt,
+ 			},
  		); err != nil {
  			return nil, err
- 		}
-@@ -943,6 +995,9 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
+@@ -982,6 +1031,9 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
  	delete(updates, OllamaCloudUsageSnapshotExtraKey)
  	delete(updates, OpenCodeGoUsageAutoRefreshExtraKey)
  	delete(updates, OpenCodeGoUsageSnapshotExtraKey)
@@ -1984,7 +1871,7 @@ index 0521f7a..204933e 100644
  	if _, exists := updates[openAILongContextBillingEnabledKey]; exists {
  		account, err := s.accountRepo.GetByID(ctx, id)
  		if err != nil {
-@@ -964,6 +1019,21 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
+@@ -1003,6 +1055,21 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
  	// Managed probe/session state may only enter through dedicated typed endpoints.
  	input.Extra = sanitizedCodexFingerprintExtraUpdates(input.Extra)
  	input.Extra = stripOpenAIAutoResetCreditManagedExtra(input.Extra, true)
@@ -2005,8 +1892,8 @@ index 0521f7a..204933e 100644
 +	}
  	delete(input.Extra, UpstreamBillingProbeEnabledExtraKey)
  	delete(input.Extra, UpstreamBillingRateSyncEnabledExtraKey)
- 	delete(input.Extra, UpstreamBillingProbeExtraKey)
-@@ -972,6 +1042,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
+ 	delete(input.Extra, UpstreamBillingGroupSyncEnabledExtraKey)
+@@ -1012,6 +1079,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
  	delete(input.Extra, OllamaCloudUsageSnapshotExtraKey)
  	delete(input.Extra, OpenCodeGoUsageAutoRefreshExtraKey)
  	delete(input.Extra, OpenCodeGoUsageSnapshotExtraKey)
@@ -2016,8 +1903,8 @@ index 0521f7a..204933e 100644
  
  	if len(input.AccountIDs) == 0 && input.Filters != nil {
  		accountIDs, err := s.resolveBulkUpdateTargetIDs(ctx, input.Filters)
-@@ -1134,13 +1207,24 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
- 			repoUpdates.Extra[UpstreamBillingRateSyncEnabledExtraKey] = false
+@@ -1183,13 +1253,24 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
+ 			repoUpdates.Extra[UpstreamBillingGroupSyncEnabledExtraKey] = false
  		}
  	}
 -	if updatesUpstreamBillingProbeIdentity(input.Credentials) || input.ProxyID != nil {
@@ -2042,7 +1929,7 @@ index 0521f7a..204933e 100644
  	}
  	if input.Name != "" {
  		repoUpdates.Name = &input.Name
-@@ -1215,8 +1299,19 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
+@@ -1264,8 +1345,19 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
  	return result, nil
  }
  
@@ -2063,7 +1950,7 @@ index 0521f7a..204933e 100644
  		if _, ok := credentials[key]; ok {
  			return true
  		}
-@@ -1232,7 +1327,7 @@ func upstreamBillingProbeIdentity(account *Account) map[string]any {
+@@ -1281,7 +1373,7 @@ func upstreamBillingProbeIdentity(account *Account) map[string]any {
  	if account.ProxyID != nil {
  		identity["proxy_id"] = *account.ProxyID
  	}
@@ -2072,23 +1959,11 @@ index 0521f7a..204933e 100644
  		if value, ok := account.Credentials[key]; ok {
  			identity[key] = value
  		}
-diff --git a/backend/internal/service/admin_account_upstream_billing_probe_test.go b/backend/internal/service/admin_account_upstream_billing_probe_test.go
-index 4298806..4813d6c 100644
---- a/backend/internal/service/admin_account_upstream_billing_probe_test.go
-+++ b/backend/internal/service/admin_account_upstream_billing_probe_test.go
-@@ -31,6 +31,7 @@ func (r *accountBillingSettingsAdminRepo) UpdateWithAccountBillingSettings(
- 	probeEnabled *bool,
- 	rateSyncEnabled *bool,
- 	rateMultiplier *float64,
-+	_ ...*time.Time,
- ) error {
- 	r.mu.Lock()
- 	defer r.mu.Unlock()
 diff --git a/backend/internal/service/upstream_billing_probe.go b/backend/internal/service/upstream_billing_probe.go
-index d9a769e..261b9aa 100644
+index 55c07c178..11e08d961 100644
 --- a/backend/internal/service/upstream_billing_probe.go
 +++ b/backend/internal/service/upstream_billing_probe.go
-@@ -395,7 +395,7 @@ func (s *UpstreamBillingProbeService) RunDue(ctx context.Context) error {
+@@ -399,7 +399,7 @@ func (s *UpstreamBillingProbeService) RunDue(ctx context.Context) error {
  	due := make([]Account, 0, len(accounts))
  	for i := range accounts {
  		account := accounts[i]
@@ -2097,7 +1972,7 @@ index d9a769e..261b9aa 100644
  			continue
  		}
  		snapshot := decodeUpstreamBillingProbeSnapshot(account.Extra)
-@@ -501,7 +501,7 @@ func (s *UpstreamBillingProbeService) probeAccountWithMode(ctx context.Context,
+@@ -505,7 +505,7 @@ func (s *UpstreamBillingProbeService) probeAccountWithMode(ctx context.Context,
  			return nil, ErrUpstreamBillingProbeAccountInvalid
  		}
  		if requireEnabled {
@@ -2106,56 +1981,36 @@ index d9a769e..261b9aa 100644
  				return nil, nil
  			}
  			if snapshot := decodeUpstreamBillingProbeSnapshot(account.Extra); snapshot != nil &&
-@@ -640,7 +640,11 @@ func (s *UpstreamBillingProbeService) probeLoadedAccount(ctx context.Context, ac
- 		// 填成官方默认域，且提供 us-east-1.api.x.ai 等官方区域预设）⇒
- 		// 必无 /v1/sub2api/billing；不发请求，直接记 unsupported，避免
- 		// 拿账号 Key 周期性请求官方域的不存在路径。
--		return s.persistProbeFailure(ctx, account, intervalMinutes, now, 0, "unsupported", 0)
-+		snapshot, err := s.persistProbeFailure(ctx, account, intervalMinutes, now, 0, "unsupported", 0)
-+		if err == nil {
-+			memoizeUpstreamProbeUnsupported(ctx, s.accountRepo, account)
-+		}
-+		return snapshot, err
- 	}
- 	normalizedBaseURL, err := s.accountTestService.validateUpstreamBaseURL(baseURL)
- 	if err != nil {
-@@ -692,15 +696,23 @@ func (s *UpstreamBillingProbeService) probeLoadedAccount(ctx context.Context, ac
- 	if len(body) > upstreamBillingProbeMaxBodyBytes {
- 		return s.persistProbeFailure(ctx, account, intervalMinutes, now, resp.StatusCode, "response_too_large", retryAfter(resp.Header, now))
- 	}
--	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
--		return s.persistProbeFailure(ctx, account, intervalMinutes, now, resp.StatusCode, "unsupported", retryAfter(resp.Header, now))
-+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusNotImplemented {
-+		snapshot, err := s.persistProbeFailure(ctx, account, intervalMinutes, now, resp.StatusCode, "unsupported", retryAfter(resp.Header, now))
-+		if err == nil {
-+			memoizeUpstreamProbeUnsupported(ctx, s.accountRepo, account)
-+		}
-+		return snapshot, err
- 	}
- 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
- 		return s.persistProbeFailure(ctx, account, intervalMinutes, now, resp.StatusCode, "http_error", retryAfter(resp.Header, now))
- 	}
- 	data, err := parseUpstreamBillingProbeResponse(body)
- 	if err != nil {
--		return s.persistProbeFailure(ctx, account, intervalMinutes, now, resp.StatusCode, "invalid_response", retryAfter(resp.Header, now))
-+		snapshot, persistErr := s.persistProbeFailure(ctx, account, intervalMinutes, now, resp.StatusCode, "unsupported", retryAfter(resp.Header, now))
-+		if persistErr == nil {
-+			memoizeUpstreamProbeUnsupported(ctx, s.accountRepo, account)
-+		}
-+		return snapshot, persistErr
- 	}
- 	snapshot := &UpstreamBillingProbeSnapshot{
- 		Status:        UpstreamBillingProbeStatusOK,
-@@ -734,6 +746,7 @@ func (s *UpstreamBillingProbeService) probeLoadedAccount(ctx context.Context, ac
- 	if err := s.updateSnapshot(ctx, account, snapshot, syncRate); err != nil {
+@@ -833,6 +833,7 @@ func (s *UpstreamBillingProbeService) probeLoadedAccount(ctx context.Context, ac
+ 	if err := s.updateSnapshot(ctx, account, snapshot, syncRate, group); err != nil {
  		return nil, err
  	}
 +	clearUpstreamProbeUnsupported(ctx, s.accountRepo, account)
  	if syncRate != nil {
  		// 写回是后台任务的裸 SQL，不经过管理端路由，因此不会产生 audit_logs 行。
  		// old_rate_multiplier 是本次探测开始时读到的值（写回的 CAS 不比对该列）。
+@@ -855,6 +856,9 @@ func (s *UpstreamBillingProbeService) persistProbeFailure(
+ 	reason string,
+ 	retryAfterDuration time.Duration,
+ ) (*UpstreamBillingProbeSnapshot, error) {
++	if reason == "invalid_response" || (reason == "http_error" && statusCode == http.StatusNotImplemented) {
++		reason = "unsupported"
++	}
+ 	previous := decodeUpstreamBillingProbeSnapshot(account.Extra)
+ 	failureCount := 1
+ 	if previous != nil {
+@@ -885,6 +889,9 @@ func (s *UpstreamBillingProbeService) persistProbeFailure(
+ 	if err := s.updateSnapshot(ctx, account, snapshot, nil, BillingGroupInfo{}); err != nil {
+ 		return nil, err
+ 	}
++	if status == UpstreamBillingProbeStatusUnsupported {
++		memoizeUpstreamProbeUnsupported(ctx, s.accountRepo, account)
++	}
+ 	return snapshot, nil
+ }
+ 
 diff --git a/backend/internal/service/wire.go b/backend/internal/service/wire.go
-index efa0c25..f0c2b18 100644
+index efa0c2587..f0c2b1853 100644
 --- a/backend/internal/service/wire.go
 +++ b/backend/internal/service/wire.go
 @@ -238,6 +238,8 @@ func ProvideAccountUsageService(
@@ -2177,7 +2032,7 @@ index efa0c25..f0c2b18 100644
  }
  
 diff --git a/frontend/src/api/admin/accounts.ts b/frontend/src/api/admin/accounts.ts
-index 44d0ab9..164b6ae 100644
+index 799437ebe..5ff03c7b7 100644
 --- a/frontend/src/api/admin/accounts.ts
 +++ b/frontend/src/api/admin/accounts.ts
 @@ -644,6 +644,20 @@ export async function syncUpstreamModels(id: number): Promise<SyncUpstreamModels
@@ -2201,7 +2056,7 @@ index 44d0ab9..164b6ae 100644
  export interface SyncUpstreamPreviewParams {
    platform: string
    type: string
-@@ -1165,6 +1179,7 @@ export const accountsAPI = {
+@@ -1182,6 +1196,7 @@ export const accountsAPI = {
    getAvailableModels,
    syncUpstreamModels,
    syncUpstreamModelsPreview,
@@ -2210,7 +2065,7 @@ index 44d0ab9..164b6ae 100644
    exchangeCode,
    refreshOpenAIToken,
 diff --git a/frontend/src/components/account/AccountUsageCell.vue b/frontend/src/components/account/AccountUsageCell.vue
-index 8a5a8bd..1def26b 100644
+index 8a5a8bd0f..1def26bcf 100644
 --- a/frontend/src/components/account/AccountUsageCell.vue
 +++ b/frontend/src/components/account/AccountUsageCell.vue
 @@ -687,18 +687,18 @@
@@ -2367,13 +2222,13 @@ index 8a5a8bd..1def26b 100644
 +    return
 +  }
    if (!shouldFetchUsage.value) return
-
+ 
    if (isBatchManaged.value) {
 diff --git a/frontend/src/components/account/CreateAccountModal.vue b/frontend/src/components/account/CreateAccountModal.vue
-index 34906ac..0a8cc98 100644
+index 24ba7aed1..369cdab1a 100644
 --- a/frontend/src/components/account/CreateAccountModal.vue
 +++ b/frontend/src/components/account/CreateAccountModal.vue
-@@ -3238,6 +3238,13 @@
+@@ -3253,6 +3253,13 @@
          :type="form.type"
        />
  
@@ -2387,7 +2242,7 @@ index 34906ac..0a8cc98 100644
        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
          <div>
            <label class="input-label">{{ t('admin.accounts.concurrency') }}</label>
-@@ -4183,6 +4190,7 @@ import {
+@@ -4199,6 +4206,7 @@ import {
    applyOpenAIImageSizeTiersToExtra,
    type OpenAIImageSizeTier
  } from '@/components/account/openaiImageSizeTiers'
@@ -2395,7 +2250,7 @@ index 34906ac..0a8cc98 100644
  import PlatformIcon from '@/components/common/PlatformIcon.vue'
  import Icon from '@/components/icons/Icon.vue'
  import ProxySelector from '@/components/common/ProxySelector.vue'
-@@ -4276,6 +4284,7 @@ const oauthStepTitle = computed(() => {
+@@ -4292,6 +4300,7 @@ const oauthStepTitle = computed(() => {
  // Platform-specific hints for API Key type
  // 上游ID：直接上游声明请求标识的响应头名，留空不记录。
  const upstreamRequestIdHeader = ref('')
@@ -2403,15 +2258,15 @@ index 34906ac..0a8cc98 100644
  const withUpstreamRequestIdHeader = <T extends Record<string, unknown> | undefined>(extra: T): T | Record<string, unknown> => {
    const name = upstreamRequestIdHeader.value.trim()
    if (!name) return extra
-@@ -5665,6 +5674,7 @@ const resetForm = () => {
+@@ -5703,6 +5712,7 @@ const resetForm = () => {
    apiKeyBaseUrl.value = 'https://api.anthropic.com'
    apiKeyValue.value = ''
    upstreamRequestIdHeader.value = ''
 +  quotaScript.value = ''
    upstreamBillingAutoProbeEnabled.value = true
+   upstreamGroupSyncEnabled.value = false
    editQuotaLimit.value = null
-   editQuotaDailyLimit.value = null
-@@ -5889,7 +5899,25 @@ const buildAnthropicExtra = (base?: Record<string, unknown>): Record<string, unk
+@@ -5928,7 +5938,25 @@ const buildAnthropicExtra = (base?: Record<string, unknown>): Record<string, unk
  }
  
  // Helper function to create account with mixed channel warning handling
@@ -2438,10 +2293,10 @@ index 34906ac..0a8cc98 100644
      await submitCreateAccount(payload)
    })
 diff --git a/frontend/src/components/account/EditAccountModal.vue b/frontend/src/components/account/EditAccountModal.vue
-index dc992ab..98f63cd 100644
+index e1e50ec52..990dfe300 100644
 --- a/frontend/src/components/account/EditAccountModal.vue
 +++ b/frontend/src/components/account/EditAccountModal.vue
-@@ -1932,6 +1932,13 @@
+@@ -1947,6 +1947,13 @@
          :type="account.type"
        />
  
@@ -2455,7 +2310,7 @@ index dc992ab..98f63cd 100644
        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
          <div>
            <label class="input-label">{{ t('admin.accounts.concurrency') }}</label>
-@@ -3437,6 +3444,7 @@ import {
+@@ -3453,6 +3460,7 @@ import {
    readOpenAIImageSizeTiers,
    type OpenAIImageSizeTier
  } from '@/components/account/openaiImageSizeTiers'
@@ -2463,7 +2318,7 @@ index dc992ab..98f63cd 100644
  import Toggle from '@/components/common/Toggle.vue'
  import Icon from '@/components/icons/Icon.vue'
  import ProxySelector from '@/components/common/ProxySelector.vue'
-@@ -4115,6 +4123,9 @@ const upstreamBillingRateSyncEnabled = ref(false)
+@@ -4138,6 +4146,9 @@ const upstreamBillingRateSyncEnabled = ref(false)
  const mixedScheduling = ref(false) // For antigravity accounts: enable mixed scheduling
  // 上游ID：直接上游声明请求标识的响应头名，留空不记录。
  const upstreamRequestIdHeader = ref('')
@@ -2473,7 +2328,7 @@ index dc992ab..98f63cd 100644
  const readUpstreamRequestIdHeader = (extra: unknown): string => {
    const value = (extra as Record<string, unknown> | undefined)?.upstream_request_id_header
    return typeof value === 'string' ? value : ''
-@@ -4661,6 +4672,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
+@@ -4704,6 +4715,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
  	mixedScheduling.value = extra?.mixed_scheduling === true
  	allowOverages.value = extra?.allow_overages === true
  	upstreamRequestIdHeader.value = readUpstreamRequestIdHeader(extra)
@@ -2481,7 +2336,7 @@ index dc992ab..98f63cd 100644
  	openAIImagesUrlToB64JsonEnabled.value = extra?.images_url_to_b64_json === true
  	openAIImageSizeTiers.value = readOpenAIImageSizeTiers(extra)
  	autoPause5hThreshold.value = typeof extra?.auto_pause_5h_threshold === 'number' ? extra.auto_pause_5h_threshold * 100 : null
-@@ -6431,6 +6443,13 @@ const handleSubmit = async () => {
+@@ -6485,6 +6497,13 @@ const handleSubmit = async () => {
        updatePayload.extra = newExtra
      }
  
@@ -2495,7 +2350,7 @@ index dc992ab..98f63cd 100644
      const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
        await submitUpdateAccount(accountID, updatePayload)
      })
-@@ -6463,4 +6482,14 @@ const handleMixedChannelConfirm = async () => {
+@@ -6517,4 +6536,12 @@ const handleMixedChannelConfirm = async () => {
  const handleMixedChannelCancel = () => {
    clearMixedChannelDialog()
  }
@@ -2503,16 +2358,14 @@ index dc992ab..98f63cd 100644
 +const quotaScriptConnection = computed(() => ({
 +  account_id: props.account?.id,
 +  api_key: editApiKey.value.trim(),
-+  base_url: isCNApiKeyAccount.value && editApiProtocol.value === 'adaptive'
-+    ? (editAdaptiveBaseUrls.value.chat_completions || defaultBaseUrl.value).trim()
-+    : editBaseUrl.value.trim() || defaultBaseUrl.value,
++  base_url: billingBaseUrl.value || defaultBaseUrl.value,
 +  proxy_id: form.proxy_id ?? null,
 +  extra: { ...props.account?.extra }
 +}))
  </script>
 diff --git a/frontend/src/components/account/QuotaScriptEditor.vue b/frontend/src/components/account/QuotaScriptEditor.vue
 new file mode 100644
-index 0000000..fef8e85
+index 000000000..fef8e8560
 --- /dev/null
 +++ b/frontend/src/components/account/QuotaScriptEditor.vue
 @@ -0,0 +1,107 @@
@@ -2625,7 +2478,7 @@ index 0000000..fef8e85
 +</template>
 diff --git a/frontend/src/components/account/UpstreamQuotaUsage.vue b/frontend/src/components/account/UpstreamQuotaUsage.vue
 new file mode 100644
-index 0000000..ffb196c
+index 000000000..ffb196c1f
 --- /dev/null
 +++ b/frontend/src/components/account/UpstreamQuotaUsage.vue
 @@ -0,0 +1,36 @@
@@ -2666,7 +2519,7 @@ index 0000000..ffb196c
 +  </div>
 +</template>
 diff --git a/frontend/src/components/account/UsageProgressBar.vue b/frontend/src/components/account/UsageProgressBar.vue
-index ea7f0ae..61383ed 100644
+index ea7f0ae52..61383ed85 100644
 --- a/frontend/src/components/account/UsageProgressBar.vue
 +++ b/frontend/src/components/account/UsageProgressBar.vue
 @@ -54,8 +54,17 @@
@@ -2698,7 +2551,7 @@ index ea7f0ae..61383ed 100644
  const props = withDefaults(
    defineProps<{
 diff --git a/frontend/src/i18n/locales/en/admin/accounts.ts b/frontend/src/i18n/locales/en/admin/accounts.ts
-index 1dbb865..74bd5fd 100644
+index 469e60210..098088cfb 100644
 --- a/frontend/src/i18n/locales/en/admin/accounts.ts
 +++ b/frontend/src/i18n/locales/en/admin/accounts.ts
 @@ -3,6 +3,11 @@ export default {
@@ -2713,7 +2566,7 @@ index 1dbb865..74bd5fd 100644
        autoRefresh: 'Auto Refresh',
        enableAutoRefresh: 'Enable auto refresh',
        refreshInterval5s: '5 seconds',
-@@ -1715,6 +1720,7 @@ export default {
+@@ -1743,6 +1748,7 @@ export default {
          noData: 'No usage data available for this account'
        },
        usageWindow: {
@@ -2722,7 +2575,7 @@ index 1dbb865..74bd5fd 100644
          statsTitleDaily: 'Daily Usage Statistics',
          geminiProDaily: 'Pro',
 diff --git a/frontend/src/i18n/locales/zh/admin/accounts.ts b/frontend/src/i18n/locales/zh/admin/accounts.ts
-index a3e16a3..6936671 100644
+index 1af0ea364..d3edcffeb 100644
 --- a/frontend/src/i18n/locales/zh/admin/accounts.ts
 +++ b/frontend/src/i18n/locales/zh/admin/accounts.ts
 @@ -3,6 +3,11 @@ export default {
@@ -2737,7 +2590,7 @@ index a3e16a3..6936671 100644
        autoRefresh: '自动刷新',
        enableAutoRefresh: '启用自动刷新',
        refreshInterval5s: '5 秒',
-@@ -512,6 +517,7 @@ export default {
+@@ -522,6 +527,7 @@ export default {
          }
        },
        usageWindow: {
@@ -2746,10 +2599,10 @@ index a3e16a3..6936671 100644
          statsTitleDaily: '每日用量统计',
          geminiProDaily: 'Pro',
 diff --git a/frontend/src/types/index.ts b/frontend/src/types/index.ts
-index 21ffc93..2135288 100644
+index 25ecc4f66..8478465b3 100644
 --- a/frontend/src/types/index.ts
 +++ b/frontend/src/types/index.ts
-@@ -1515,6 +1515,10 @@ export interface AccountUsageInfo {
+@@ -1516,6 +1516,10 @@ export interface AccountUsageInfo {
    seven_day_sonnet: UsageProgress | null
    seven_day_fable?: UsageProgress | null
    thirty_day?: UsageProgress | null
@@ -2761,7 +2614,7 @@ index 21ffc93..2135288 100644
    gemini_pro_daily?: UsageProgress | null
    gemini_flash_daily?: UsageProgress | null
 diff --git a/frontend/src/utils/accountUsageRefresh.ts b/frontend/src/utils/accountUsageRefresh.ts
-index 4d64ee7..77d6058 100644
+index 4d64ee789..77d60587b 100644
 --- a/frontend/src/utils/accountUsageRefresh.ts
 +++ b/frontend/src/utils/accountUsageRefresh.ts
 @@ -29,6 +29,9 @@ const isNonBlankString = (value: unknown): value is string => (
@@ -2777,7 +2630,7 @@ index 4d64ee7..77d6058 100644
 @@ -70,7 +73,27 @@ export const buildGrokUsageRefreshKey = (account: Pick<Account, 'platform' | 'ex
    ].join('|')
  }
-
+ 
 -export const buildAccountUsageRefreshKey = (account: Pick<Account, 'id' | 'platform' | 'type' | 'updated_at' | 'last_used_at' | 'rate_limit_reset_at' | 'session_window_start' | 'session_window_end' | 'session_window_status' | 'extra'>): string => {
 +export const buildAccountUsageRefreshKey = (account: Pick<Account, 'id' | 'platform' | 'type' | 'updated_at' | 'last_used_at' | 'rate_limit_reset_at' | 'session_window_start' | 'session_window_end' | 'session_window_status' | 'extra' | 'credentials' | 'proxy_id'>): string => {
 +  if (account.type === 'apikey') {
@@ -2801,13 +2654,13 @@ index 4d64ee7..77d6058 100644
 +    })
 +  }
    if (account.platform === 'openai') return buildOpenAIUsageRefreshKey(account)
-
+ 
    const isClaude = account.platform === 'anthropic' && (account.type === 'oauth' || account.type === 'setup-token')
 diff --git a/frontend/src/views/admin/AccountsView.vue b/frontend/src/views/admin/AccountsView.vue
-index fc3bea8..aeb2f40 100644
+index 4ded2775b..f5a592d39 100644
 --- a/frontend/src/views/admin/AccountsView.vue
 +++ b/frontend/src/views/admin/AccountsView.vue
-@@ -521,6 +521,7 @@ import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.
+@@ -534,6 +534,7 @@ import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.
  import type { SelectOption } from '@/components/common/Select.vue'
  import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
  import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
@@ -2815,7 +2668,7 @@ index fc3bea8..aeb2f40 100644
  import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
  import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
  import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
-@@ -531,7 +532,7 @@ import Icon from '@/components/icons/Icon.vue'
+@@ -544,7 +545,7 @@ import Icon from '@/components/icons/Icon.vue'
  import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
  import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
  import { fetchAllAccountIds } from '@/utils/accountSelection'
@@ -2824,7 +2677,7 @@ index fc3bea8..aeb2f40 100644
  import { formatDateTime, formatRelativeTime } from '@/utils/format'
  import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
  import { extractApiErrorMessage } from '@/utils/apiError'
-@@ -763,6 +764,8 @@ const buildDefaultTodayStats = (): WindowStats => ({
+@@ -777,6 +778,8 @@ const buildDefaultTodayStats = (): WindowStats => ({
  })
  
  const accountSupportsBatchUsage = (account: Account) => {
@@ -2833,7 +2686,7 @@ index fc3bea8..aeb2f40 100644
    if (account.platform === 'anthropic') {
      return account.type === 'oauth' || account.type === 'setup-token'
    }
-@@ -827,6 +830,8 @@ const flushQueuedUsageBatch = async () => {
+@@ -841,6 +844,8 @@ const flushQueuedUsageBatch = async () => {
        if ((usageBatchRequestTokenByAccountId.value[key] ?? 0) !== requestTokensByAccount[key]) {
          continue
        }
@@ -2842,7 +2695,7 @@ index fc3bea8..aeb2f40 100644
        const usage = usageMap[key] ?? null
        nextUsage[key] = usage
        nextErrors[key] = errorMap[key] ?? null
-@@ -849,6 +854,8 @@ const flushQueuedUsageBatch = async () => {
+@@ -863,6 +868,8 @@ const flushQueuedUsageBatch = async () => {
        if ((usageBatchRequestTokenByAccountId.value[key] ?? 0) !== requestTokensByAccount[key]) {
          continue
        }

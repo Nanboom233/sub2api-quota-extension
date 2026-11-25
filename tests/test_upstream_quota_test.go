@@ -218,7 +218,7 @@ func (r *quotaAccountRepoFixture) Update(_ context.Context, account *Account) er
 	return r.saveAccountLocked(account)
 }
 
-func (r *quotaAccountRepoFixture) UpdateWithAccountBillingSettings(_ context.Context, account *Account, _, _ *bool, _ *float64, previousExpiresAt ...*time.Time) error {
+func (r *quotaAccountRepoFixture) UpdateWithAccountBillingSettings(_ context.Context, account *Account, settings AccountBillingSettingsUpdate) error {
 	if r.onBeforeUpdate != nil {
 		r.onBeforeUpdate()
 	}
@@ -234,27 +234,27 @@ func (r *quotaAccountRepoFixture) UpdateWithAccountBillingSettings(_ context.Con
 	identityUnchanged := current.Platform == account.Platform && current.Type == account.Type &&
 		fixtureCredentialsEqual(current.Credentials, account.Credentials) && fixtureProxyIDEqual(current.ProxyID, account.ProxyID)
 	schedulingUnchanged := identityUnchanged && AccountQuotaScript(current) == AccountQuotaScript(account)
-	for _, key := range APIKeyQuotaManagedExtraKeys {
-		delete(account.Extra, key)
-		if schedulingUnchanged || (identityUnchanged && key == APIKeyUsageUnsupportedIdentityExtraKey) {
-			if account.Extra == nil {
-				account.Extra = map[string]any{}
-			}
-			if value, ok := current.Extra[key]; ok {
-				account.Extra[key] = value
+	if settings.MergeAPIKeyQuotaState {
+		for _, key := range APIKeyQuotaManagedExtraKeys {
+			delete(account.Extra, key)
+			if schedulingUnchanged || (identityUnchanged && key == APIKeyUsageUnsupportedIdentityExtraKey) {
+				if account.Extra == nil {
+					account.Extra = map[string]any{}
+				}
+				if value, ok := current.Extra[key]; ok {
+					account.Extra[key] = value
+				}
 			}
 		}
-	}
-	if len(previousExpiresAt) > 0 {
-		previous := previousExpiresAt[0]
+		previous := settings.PreviousExpiresAt
 		if (account.ExpiresAt == nil && previous == nil) ||
 			(account.ExpiresAt != nil && previous != nil && account.ExpiresAt.Unix() == previous.Unix()) {
 			account.ExpiresAt = current.ExpiresAt
 		}
-	}
-	if !schedulingUnchanged && strings.HasPrefix(current.TempUnschedulableReason, "apikey_quota_") {
-		current.TempUnschedulableUntil = nil
-		current.TempUnschedulableReason = ""
+		if !schedulingUnchanged && strings.HasPrefix(current.TempUnschedulableReason, "apikey_quota_") {
+			current.TempUnschedulableUntil = nil
+			current.TempUnschedulableReason = ""
+		}
 	}
 	return r.saveAccountLocked(account)
 }
@@ -319,9 +319,6 @@ func (r *quotaAccountRepoFixture) BulkUpdate(_ context.Context, ids []int64, upd
 				proxyID := *updates.ProxyID
 				account.ProxyID = &proxyID
 			}
-		}
-		if updates.ExpiresAt != nil {
-			account.ExpiresAt = updates.ExpiresAt
 		}
 		if len(updates.Extra) > 0 {
 			if account.Extra == nil {
@@ -405,10 +402,6 @@ func (r *quotaAccountRepoFixture) UpdateAPIKeyQuotaState(
 			r.updates = make(map[int64][]map[string]any)
 		}
 		r.updates[expected.ID] = append(r.updates[expected.ID], maps.Clone(extra))
-	}
-	if expiresAt != nil {
-		expCopy := *expiresAt
-		r.bulkUpdates = append(r.bulkUpdates, AccountBulkUpdate{ExpiresAt: &expCopy})
 	}
 	if r.writeErr != nil {
 		return false, r.writeErr
@@ -526,12 +519,12 @@ func TestUpstreamQuotaExistingUsageEntryPoints(t *testing.T) {
 	wantExpiry := time.Date(2026, 11, 25, 0, 0, 0, 0, time.UTC)
 	wantAccount.ExpiresAt = &wantExpiry
 	require.Equal(t, wantAccount, *repo.accounts[1])
-	require.Equal(t, []AccountBulkUpdate{{ExpiresAt: &wantExpiry}}, repo.bulkUpdates)
+	require.Empty(t, repo.bulkUpdates)
 
 	// An equal reported expiry needs no write. Missing expiry must preserve the saved value.
 	_, err = svc.GetUsage(context.Background(), 1)
 	require.NoError(t, err)
-	require.Len(t, repo.bulkUpdates, 1)
+	require.Empty(t, repo.bulkUpdates)
 	fixtureBody.Store(`{"mode":"unrestricted","balance":25,"unit":"USD"}`)
 	batch, failures, err := svc.GetUsageBatch(context.Background(), ids, true)
 	require.NoError(t, err)
@@ -548,7 +541,7 @@ func TestUpstreamQuotaExistingUsageEntryPoints(t *testing.T) {
 		}
 	}
 	require.Equal(t, wantAccount, *repo.accounts[1])
-	require.Len(t, repo.bulkUpdates, 1)
+	require.Empty(t, repo.bulkUpdates)
 
 	fixtureBody.Store(`{"mode":"unrestricted","balance":25,"expires_at":"2020-01-01T00:00:00Z"}`)
 	_, err = svc.GetUsage(context.Background(), 1)
@@ -556,7 +549,7 @@ func TestUpstreamQuotaExistingUsageEntryPoints(t *testing.T) {
 	pastExpiry := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	wantAccount.ExpiresAt = &pastExpiry
 	require.Equal(t, wantAccount, *repo.accounts[1])
-	require.Equal(t, AccountBulkUpdate{ExpiresAt: &pastExpiry}, repo.bulkUpdates[1])
+	require.Empty(t, repo.bulkUpdates)
 
 	repo.writeErr = errors.New("fixture expiry write failure")
 	fixtureBody.Store(`{"mode":"unrestricted","balance":25,"expires_at":"2026-12-01T00:00:00Z"}`)
